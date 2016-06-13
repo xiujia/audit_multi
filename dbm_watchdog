@@ -1,0 +1,63 @@
+#!/bin/bash
+
+bin_path=/usr/inp/bin/
+local_path=/usr/local/bin/
+
+audit_process="$bin_path"audit_process
+audit_csp_release="$bin_path"audit_csp_rel
+#audit_sql_insert="$bin_path"audit_sql_insert
+audit_mongo_insert="$bin_path"audit_mongo_insert
+audit_runtime_redis="$bin_path"audit_runtime_redis
+redis_server="$local_path"redis-server
+hbase_thrift=/usr/local/hbase-0.98.10.1-hadoop1/bin/hbase-daemon.sh
+
+check_process()
+{
+
+	#cmd0=`ps -ef|awk '{print $8}'|grep audit_process|wc -l`
+
+	for (( i=0; i < 10; i++ ))
+	do
+		cmd1=`ps -ef|awk '{print $8,$9}'|grep audit_csp_rel|awk '{print $2}'|grep $i|wc -l`
+		if [ $cmd1 -eq 0 ];then
+			/usr/inp/bin/audit_csp_rel $i 1
+		fi
+
+		cmd2=`ps -ef|awk '{print $8,$9}'|grep audit_studio_rel|awk '{print $2}'|grep $i|wc -l`
+		if [ $cmd2 -eq 0 ];then
+			/usr/inp/bin/audit_studio_rel $i 1
+		fi
+
+		cmd3=`ps -ef|awk '{print $8,$9}'|grep audit_sqlserver_rel|awk '{print $2}'|grep $i|wc -l`
+		if [ $cmd3 -eq 0 ];then
+			/usr/inp/bin/audit_sqlserver_rel $i 1
+		fi
+	done
+
+	
+	cmd4=`ps -ef|awk '{print $8}'|grep audit_mongo_insert|wc -l`
+	cmd5=`ps -ef|awk '{print $8}'|grep audit_runtime_redis|wc -l`
+	cmd6=`ps -ef|awk '{print $8}'|grep redis-server|wc -l`
+	if [ $cmd4 -eq 0 ];then
+		/usr/inp/bin/audit_mongo_insert 1
+	fi
+
+	if [ $cmd5 -eq 0 ];then
+		$audit_runtime_redis
+	fi
+	
+	if [ $cmd6 -eq 0 ];then
+		$redis_server /etc/redis.conf
+	fi
+
+#	const_inp_pid = 0
+}
+	
+flag=0
+
+while true
+do
+	sleep 2
+	check_process
+
+done

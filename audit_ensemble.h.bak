@@ -1,0 +1,84 @@
+#ifndef _AUDIT_ENSEMBLE_H
+#define _AUDIT_ENSEMBLE_H
+
+#include "audit_api.h"
+#include "csp_deal.h"
+#include "audit_database.h"
+#include "csp_redis.h"
+
+#include  <dirent.h>
+
+#define MONGO_ENSEMBLE_REQUEST_VALUES	"rowkey=%s|colfam1:table=%s|colfam1:app_id=%d|colfam1:sub_app_id=%d|colfam1:src_ip=%s|colfam1:dst_ip=%s|colfam1:src_mac=%s|colfam1:dst_mac=%s|colfam1:src_port=%s|colfam1:dst_port=%s|colfam1:user_id=%s|colfam1:saveflag=%d|colfam1:interval_time=%d|colfam1:operation_command=%u|colfam\n"
+#define MONGO_ENSEMBLE_REQUEST_PARAMS	ensembleRel.times,ensembleRel.table,ensembleRel.type,ensembleRel.sub_app_id,ensembleRel.userip,ensembleRel.desip,ensembleRel.srcmac,ensembleRel.desmac,ensembleRel.cliport,ensembleRel.serport,ensembleRel.userid,ensembleRel.saveflag,ensembleRel.interval_time,ensembleRel.operation_len
+
+#define MONGO_ENSEMBLE_RESPONSE_VALUES	"rowkey=%s|colfam1:line_num=%d|colfam1:response_content=%u|colfam\n"
+#define MONGO_ENSEMBLE_RESPONSE_PARAMS	ensembleRel.times,ensembleRel.line_num,ensembleRel.response_len
+
+#define REQ_RES_LEN  1024*1024*10
+
+
+typedef struct {
+	unsigned int plen;
+	unsigned int session_num_1;
+	unsigned short session_num_2;
+	unsigned short unknown_flag;
+	unsigned short opt_flg;
+}AUDIT_ENSEMBLE_HEAD;
+
+typedef struct{
+	unsigned char len;
+	unsigned char type;
+	unsigned char data[0];
+}AUDIT_ENSEMBLE_DATA_ST;
+
+typedef struct{
+	unsigned short len;
+	unsigned char type;
+	unsigned char data[0];
+}AUDIT_ENSEMBLE_DATA2_ST;
+
+
+
+
+typedef struct{
+	char id[CSP_ID_LEN];
+	char userid[CSP_USERID_LEN];
+	char times[CSP_TIMES_LEN];
+	char userip[CSP_IP_LEN];
+	char srcmac[CSP_MAC_LEN];
+	char desip[CSP_IP_LEN];
+	char desmac[CSP_MAC_LEN];
+	char cliport[CSP_PORT_LEN];
+	char serport[CSP_PORT_LEN];
+	char policytime[CSP_TIMES_LEN];
+	char table[AUDIT_TIME_LEN];
+	char operation[REQ_RES_LEN];
+	char response[REQ_RES_LEN];
+	int request_type;
+ 	long operation_len;
+	long response_len;
+	int  type;
+	int sub_app_id;
+	char * data;
+	unsigned long size;
+	int saveflag;
+	time_t request_time;
+	time_t response_time;
+	time_t interval_time;
+	int line_num;
+}AUDIT_ENSEMBLE_REL;
+
+typedef struct{
+	int segLen;
+	int dataLen;
+}LENS;
+
+typedef struct {
+	char * key1;
+	char * key2;
+}OPTKEYS;
+
+AUDIT_ENSEMBLE_REL  ensembleRel;
+
+
+#endif

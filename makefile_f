@@ -1,0 +1,44 @@
+CC = gcc
+CFLAGS = -Wall -O -g
+LIBPATH = /usr/lib/mysql/
+INCLUD =  /usr/include/mysql/
+INSTALL = /usr/bin/install -c
+BIN_DIR = /usr/inp/bin/
+BUILD_DIR = ./build/
+FLAGS = -lmysqlclient -lpthread 
+
+
+PROG = audit_show audit_process audit_policy_add audit_policy_del audit_policy_reload webmail_process webmail_deal bbs_process bbs_deal ripmime_process ./ripmime-1.4.dev/ripmime
+
+all:  audit_show audit_process audit_policy_add audit_policy_del audit_policy_reload webmail_process webmail_deal bbs_process bbs_deal ripmime  ripmime_process 
+
+	gcc -g -c *.c
+	
+audit_process:audit_main_new.o audit_policy.o audit_bbs.o  audit_mail.o audit_im.o audit_api.o op_db.o audit_lock.o audit_ftp.o audit_telnet.o  audit_search_baidu.o audit_search_google.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_policy_add: audit_policy_add.o audit_policy.o  audit_api.o  op_db.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_policy_del: audit_policy_del.o audit_policy.o audit_api.o op_db.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_policy_reload:audit_policy_reload.o audit_policy.o audit_api.o op_db.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+webmail_deal:webmail_deal.o audit_api.o op_db.o webmail_fun.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+bbs_deal:bbs_deal.o audit_api.o op_db.o audit_lock.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+ripmime_process:ripmime_process.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_show:audit_show.o audit_policy.o audit_api.o op_db.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+ripmime:
+	cd ./ripmime-1.4.dev && make
+
+clean:
+	rm -f *.o
+	rm -f $(PROG)
+	rm -f ./ripmime-1.4.dev/*.o
+
+install:
+	$(INSTALL) $(PROG) audit_watchdog  $(BIN_DIR)
+install-build:	
+	$(INSTALL) $(PROG) audit_watchdog  $(BUILD_DIR)

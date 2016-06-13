@@ -1,0 +1,1818 @@
+#define _GNU_SOURCE
+
+#include <unistd.h>
+#include <signal.h>
+#include "csp_deal.h"
+#include "csp_redis.h"
+#include "audit_database_sql.h"
+#include "audit_release.h"
+#include "qsort.h"
+#include <zlib.h>
+#include "chunk.h"
+#include "gzip.h"
+#include "csp_policy.h"
+#include "redis_new_api.h"
+#include "audit_release.h"
+#define __USE_GNU
+
+#include <string.h>
+//#undef _GNU_SOURCE
+
+/*
+use dbmonitor;
+insert into tablse()                                    
+values
+(),
+(),
+
+*/
+//web_url_id	(SELECT  cfg_monitor_web_requesturl.id FROM (cfg_monitor_web_requesturl left join cfg_monitor_web_requesturl_post_relation on cfg_monitor_web_requesturl.id = cfg_monitor_web_requesturl_post_relation.url_id)	join cfg_monitor_web_post_content on cfg_monitor_web_requesturl_post_relation.post_id = cfg_monitor_web_post_content.id WHERE cfg_monitor_web_post_content.post_value = '%s'),
+
+
+
+#define GETPATH(a,b,c) \
+	sprintf((a),"%s%s",(b),(c));
+#define DATA_SELECTURLQUERY 	"SELECT  cfg_monitor_web_requesturl.id FROM (cfg_monitor_web_requesturl left join cfg_monitor_web_requesturl_post_relation on cfg_monitor_web_requesturl.id = cfg_monitor_web_requesturl_post_relation.url_id)  join cfg_monitor_web_post_content on cfg_monitor_web_requesturl_post_relation.post_id = cfg_monitor_web_post_content.id WHERE cfg_monitor_web_post_content.post_value = '%s'"
+#define DATA_INSERTQUERY		 "use dbmonitor;\r\nINSERT INTO cache_monitor_data_%s(capture_time,app_id,src_ip,  dst_ip , src_mac,dst_mac,src_port,dst_port,department,web_session,user_name,web_url,web_content,user_id,alarm_id,level_1,level_2,level_3,file_path) VALUES \r\n"
+#define DATA_VALUESQUERY_FMT		"('%s','%d','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s',%u,%u,%u,%u,'%s'),\r\n"
+#define DATA_QUERYPARMAR		csp_file_info->cspHead.table,csp_file_info->cspHead.times,csp_file_info->type,csp_file_info->cspHead.userip,csp_file_info->cspHead.desip,csp_file_info->cspHead.srcmac,csp_file_info->cspHead.desmac,csp_file_info->cspHead.cliport,csp_file_info->cspHead.serport,csp_file_info->cspData.department,csp_file_info->cspData.session,csp_file_info->cspData.userName,csp_file_info->cspData.requestUrl,csp_file_info->cspData.webContent,csp_file_info->cspHead.userid,csp_file_info->alarm.id,csp_file_info->alarm.level[0],csp_file_info->alarm.level[1],csp_file_info->alarm.level[2],filename 
+//#define DATA_JAVASCRIPT_ALART 	"<script type=\"text/javascript\">window.alert=function(){};window.confirm=function(){};window.prompt=function(){};self.moveTo=function(){};self.resizeTo=function(){};window.open=function(){};</script>\n"
+#define DATA_JAVASCRIPT_ALART 	""
+#if GA_TEST
+#define HBASE_VALUES_FMT	"rowkey=%s|colfam1:table=%s|colfam1:app_id=%d|colfam1:src_ip=%s|colfam1:dst_ip=%s|colfam1:src_mac=%s|colfam1:dst_mac=%s|colfam1:src_port=%s|colfam1:dst_port=%s|colfam1:department=%s|colfam1:web_session=%s|colfam1:user_name=%s|colfam1:web_url=%s|colfam1:web_content=%s|colfam1:user_id=%s|colfam1:alarm_id=%u|colfam1:charset=%s|colfam1:security_level=%hu|colfam2:file_content=%d|colfam\n%s"
+#define HBASE_VALUES		csp_file_info->cspHead.times,csp_file_info->cspHead.table,csp_file_info->type,csp_file_info->cspHead.userip,csp_file_info->cspHead.desip,csp_file_info->cspHead.srcmac,csp_file_info->cspHead.desmac,csp_file_info->cspHead.cliport,csp_file_info->cspHead.serport,csp_file_info->cspData.department,csp_file_info->cspData.session,csp_file_info->cspData.userName,csp_file_info->cspData.requestUrl,csp_file_info->cspData.webContent,csp_file_info->cspHead.userid,csp_file_info->alarm.id,csp_file_info->cspHttpHead.charset,csp_file_info->security_level,fLen,DATA_JAVASCRIPT_ALART
+#else
+#define HBASE_VALUES_FMT	"rowkey=%s|colfam1:table=%s|colfam1:app_id=%d|colfam1:src_ip=%s|colfam1:dst_ip=%s|colfam1:src_mac=%s|colfam1:dst_mac=%s|colfam1:src_port=%s|colfam1:dst_port=%s|colfam1:department=%s|colfam1:web_session=%s|colfam1:user_name=%s|colfam1:web_url=%s|colfam1:web_content=%s|colfam1:user_id=%s|colfam1:alarm_id=%u|colfam1:charset=%s|colfam2:file_content=%d|colfam\n%s"
+#define HBASE_VALUES		csp_file_info->cspHead.times,csp_file_info->cspHead.table,csp_file_info->type,csp_file_info->cspHead.userip,csp_file_info->cspHead.desip,csp_file_info->cspHead.srcmac,csp_file_info->cspHead.desmac,csp_file_info->cspHead.cliport,csp_file_info->cspHead.serport,csp_file_info->cspData.department,csp_file_info->cspData.session,csp_file_info->cspData.userName,csp_file_info->cspData.requestUrl,csp_file_info->cspData.webContent,csp_file_info->cspHead.userid,csp_file_info->alarm.id,csp_file_info->cspHttpHead.charset,fLen,DATA_JAVASCRIPT_ALART
+#endif
+
+
+#define ALARM_SELECTURLQUERY
+#define ALARM_INSERTQUERY
+
+#define OVERLONG	(u_int64_t)-1
+#define CSPDEBUG 	if(0)
+
+#define SQL_MAX_LEN 2*1024*1024  //2M
+#define AUDIT_CONTENT_PATH  "/dev/shm/"
+
+char sqlQuery[SQL_MAX_LEN];
+
+#define TEST_EFF_DECLARED unsigned long st,fi;
+#define TEST_FUN_EFF(B,A) A;//st=get_usec_time(); A; //fi=get_usec_time(); //printf("%s:%lu,%lu,%d\n",B,fi,st,fi-st);
+
+
+
+u_int64_t sqlNum = 0;
+u_int64_t alarmSqlNum = 0;
+FILE * sqlFp;
+char sqltimes_csp[CSP_TIMES_LEN];
+char sqltimes_alarm[CSP_TIMES_LEN];
+CSP_FILE_INFO cspFileInfo;
+unsigned int nodeNum;
+char fileContent1[CSP_FILE_MAX_LEN];
+char fileContent2[CSP_FILE_MAX_LEN];
+
+char httpContent[CSP_FILE_MAX_LEN];
+char httpUnChunked[CSP_FILE_MAX_LEN];
+char httpUzip[CSP_FILE_MAX_LEN];
+
+char * httpptr;
+unsigned long httplen;
+
+char fullRequestFile[CSP_PATH_LEN];
+char fullResponseFile[CSP_PATH_LEN];
+
+#define CspFree(a)  if((a)) free((a));
+#define CspClose(a)  if((a)) fclose((a));
+
+ unsigned  int serch(char s){
+
+	switch (s) {
+                case '0' ... '9':
+                        return (int)(s - 48);
+                        break;
+                case 'a' ... 'f':
+                       return (int)(s - 87);
+                        break;
+                case 'A' ... 'F':
+                        return (int)(s - 55);
+                        break;
+                default:
+                        return 0;
+                break;	
+	}
+}
+
+static unsigned int  url_2_asc(char asc_code[],char url_code[], int length){
+			int i=0, j,len=0;
+			for(j=0;j<length;j++){					
+				if(url_code[j]!='%')
+				{
+					if(url_code[j]=='+')
+						url_code[j]=' ';
+					asc_code[i]=url_code[j];	
+						i++;
+				}
+				else 
+				{
+					asc_code[i] = 16 * serch(url_code[j+1]) + serch(url_code[j+2]); 
+							j+=2;
+							i++;
+				}
+			}if(strstr(asc_code,"%25"))
+				{
+					len = i;
+					char new_code[len+1];
+					
+					memset(new_code, 0, len+1);
+					memcpy(new_code, asc_code, len);
+					memset(asc_code, 0,len+1);
+					i = url_2_asc(asc_code, new_code, len);
+				}
+
+				return i;		
+}
+
+
+
+int CspCreateDir(char  * sPathName){
+{ 
+    char DirName[256]; 
+    strcpy(DirName, sPathName); 
+    int i,len = strlen(DirName); 
+    if(DirName[len-1]!='/') 
+        strcat(DirName, "/"); 
+ 
+    len = strlen(DirName); 
+ 
+    for(i=1; i<len; i++) 
+    { 
+        if(DirName[i]=='/') 
+        { 
+            DirName[i] = '\0'; 
+            if( access(DirName, 0755)!=0 ) 
+            { 
+                if(mkdir(DirName, 0755)==-1) 	
+                { 
+                    perror("mkdir error"); 
+                    return -1; 
+                } 
+            } 
+            DirName[i] = '/'; 
+        } 
+    } 
+ 
+    return 0; 
+}
+}
+static unsigned long GetCspFileSize(char *filename)
+{
+    struct stat buf;
+    if(stat(filename, &buf)<0)
+     {
+        return 0;
+    }
+    return (unsigned long)buf.st_size;
+}
+
+int AuditWrite(int Fd,char *psData,int Len){
+	int writtenSuccsesBytes = 0;
+	int writtenBytes = 0;
+ 	while(1){
+		writtenSuccsesBytes = write(Fd,psData + writtenBytes,Len - writtenBytes );
+		if (writtenSuccsesBytes == -1) {
+			return -1;
+			perror("write:");
+		}
+		writtenBytes += writtenSuccsesBytes;
+		if (writtenBytes < Len) {
+			continue;
+		} else if (writtenBytes == Len) {
+			break;
+		}
+	}
+	return writtenBytes;
+}
+unsigned int AuditRead(int Fd,char *psData,int Len){
+	ssize_t readSuccsesBytes = 0;
+	unsigned int readBytes = 0;
+	 do{
+		readSuccsesBytes = read(Fd,psData + readBytes,Len - readBytes );
+		if (readSuccsesBytes == -1) {
+			return 0;
+			perror("read:");
+		}
+		readBytes += readSuccsesBytes;
+	 }while(readBytes < Len);
+	 return readBytes;
+}
+
+
+/**  p_info->id|p_info_hd->user_id|times|userip|cli_mac|cliip|ser_mac|cli_port|ser_port|&    **/
+/*
+int CspReleaseHead(CSP_FILE_INFO *csp_file_info){
+	char *data,*start,*end;
+	char cspHead[CSP_HEAD_LEN] = {0};
+ 	int count = 0,len = 0;
+	int port;
+	char appid[4];
+	memset(appid,0,sizeof(appid));
+	data = csp_file_info->data;
+	if(( end = strstr(data,"\r\n"))){
+		if(end - data > 0)
+			memcpy(cspHead,data,end-data);
+		else{
+			return -1;
+		}
+	}
+	else {
+		return -1;
+	}
+
+      start	= data = cspHead;
+	if (strlen(cspHead) == 0) return -1;
+	while( (end = strstr(start,"|"))){
+		if( (len = end-start) > 0){
+			
+			switch(count++){
+				case 0:
+					memcpy(csp_file_info->cspHead.id,start,len);
+					break;
+				case 1:
+					memcpy(csp_file_info->cspHead.userid,start,len);
+					break;
+				case 2:
+					memcpy(csp_file_info->cspHead.times,start,len);
+					break;
+				case 3:
+					memcpy(csp_file_info->cspHead.userip,start,len);
+					break;
+				case 4:
+					memcpy(csp_file_info->cspHead.srcmac,start,len);
+					break;
+				case 5:
+					memcpy(csp_file_info->cspHead.desip,start,len);
+					break;
+				case 6:
+					memcpy(csp_file_info->cspHead.desmac,start,len);
+					break;
+				case 7:
+					memcpy(csp_file_info->cspHead.cliport,start,len);
+					break;
+				case 8:
+					memcpy(csp_file_info->cspHead.serport,start,len);
+					break;
+				case 9:
+					memcpy(csp_file_info->cspHead.policytime,start,len);
+					break;
+				case 10:
+					memcpy(appid,start,len);
+					csp_file_info->cspData.appId = csp_file_info->type = atoi(appid);
+					break;
+				case 11:
+					memcpy(csp_file_info->cspHead.table,start,len);
+					break;
+				default:
+					break;
+			}
+			if(*(start = end + 1) == '&')
+				break;
+		}
+		else{
+			return -1;
+		}
+		
+	}
+ 
+	return 0;
+}
+*/
+unsigned int get_file_info(CSP_FILE_INFO *csp,char *fname,char *buf,int flag){
+		unsigned int fsize =0;
+		unsigned int readsize = 0;
+
+		int Fp=0;
+	//	FILE * Fp = NULL;
+		fsize = GetCspFileSize(fname); 
+		if(fsize <=0){
+			return 0;
+		}
+		if(fsize > CSP_FILE_MAX_LEN*sizeof(char)){
+			return 0;
+		}
+	//	Fp = fopen(fname,"r+");
+		Fp = open(fname,O_RDONLY);
+		if(Fp<0){ 
+		#if CSP_DEBUG
+			printf("open %s file failed. \n",fname);
+		#endif
+			return	0;
+		}
+		readsize = AuditRead(Fp,buf,fsize);
+//		readsize = fread(buf,1,fsize,Fp);
+		close(Fp);
+		//fclose(Fp);
+		
+		if(readsize != fsize){
+			return 0;
+		}
+
+		if(flag == 2){
+			csp->response_data = buf;
+			csp->response_size = readsize;
+		}
+		else{
+			csp->request_data = buf;
+			csp->request_size = readsize;
+
+		}
+		return readsize;
+}
+int CspDoubleFileInit(char * request,char * response,CSP_FILE_INFO *csp_file_info){
+//	char *data ;
+
+
+	unsigned int ret1=0,ret2=0;
+//	memset(fileContent1,0,CSP_FILE_MAX_LEN);
+//	memset(fileContent2,0,CSP_FILE_MAX_LEN);
+
+	ret2 = get_file_info(csp_file_info,response,fileContent2,2);
+	ret1 = get_file_info(csp_file_info,request,fileContent1,1);
+//	unlink(response);
+//	unlink(request);
+
+	
+	if(ret1<=0||ret2<=0){
+		return -1;
+	}
+
+	return 0;
+	
+}
+
+char * CspGetKeywordValue(IN char * str,IN char * key_start,IN char * key_end,OUT char * outstr){
+	char *start,*end;
+	unsigned int len = 0;
+	start = str;
+
+	if((end = strstr(start,key_start))){
+		start = end + strlen(key_start);
+	}else{
+		return str;
+	}
+
+	if(strcmp(key_start,CSP_KEYWD_SESSION) == 0 || strcmp(key_start,CSP_KEYWD_SESSION_PORTAL) == 0|| strcmp(key_start,CSP_KEYWD_SESSION_DOC_PORTAL) == 0){
+		if((end = strstr(start,"--"))){
+			end+=2;
+			if((len = end -start) > 0){
+				memcpy(outstr,start,len);
+				return end;
+			}
+			else return NULL;
+		}
+		else return NULL;
+	}
+
+	if((end = strstr(start,key_end))){
+		if( (len = end -start) > 0){
+			memcpy(outstr,start,len);
+			return end+strlen(key_end);
+		}
+		else return str;
+	}
+	else{
+		return str;
+	}
+	
+}
+
+int CspKeyType(char key[]){
+	if(strcasecmp(key,"insert") == 0){
+		return CSP_KEY_TYPE_INSERT;
+	}
+	else if(strcasecmp(key,"delete") == 0){
+		return CSP_KEY_TYPE_DELETE;
+	}
+	else if(strcasecmp(key,"update") == 0){
+		return CSP_KEY_TYPE_UPDATE;
+	}
+	else if(strcasecmp(key,"TFORM") == 0){
+		return CSP_KEY_TYPE_TFORM;
+	}
+	else if(strcasecmp(key,"WEVENT") ==0){
+		return CSP_KEY_TYPE_WEVENT;
+	}
+	return 0;
+}
+
+void CspGetKeyValue(char * str,char key[],char value[]){
+	sscanf(str,"%[^=]=%s",key,value);
+}
+/*
+char *CspGetPostBodyValue(CSP_FILE_INFO * csp_file_info){
+	char *data=NULL,*start=NULL,*end=NULL,*poststart=NULL,*bodystart=NULL,*bodyend=NULL;
+	char key_value_str[CSP_KEYVALUE_LEN]={0},body[CSP_BODY_LEN] = {0};
+	char key[CSP_KEY_LEN]={0};
+	char value[CSP_VALUE_LEN]={0};
+	int len=0,bodylen=0;
+	int err;
+	char wevent[CSP_EVENT_LEN] = {0},tform[CSP_TFORM_LEN] = {0},key_insert[CSP_OPERAT_LEN] = {0},key_delete[CSP_OPERAT_LEN]= {0},key_update[CSP_OPERAT_LEN]= {0};
+	start = NULL;
+	data = csp_file_info->data;
+	poststart = strstr(data,"POST ");
+	if(!poststart) return NULL;
+	bodystart = strstr(data,CSP_KEYWD_END_4);// /r/n/r/n
+	if(!bodystart ) return NULL;
+	bodystart +=4;
+	bodyend = strstr(bodystart,CSP_KEYWD_END_3);
+	if(!bodyend) return NULL;
+	bodylen = bodyend - bodystart;
+	if (bodylen < 0)  return NULL;
+	if(bodylen > CSP_BODY_LEN ) return NULL;
+	memcpy(body,bodystart,bodylen);
+	memcpy(csp_file_info->cspData.webContent,body,bodylen);
+//	printf("body:%s\n",body);
+	start = body;
+	
+	do{
+		if((end = strstr(start,CSP_KEYWD_END_1))){
+			if((len = end - start )> 0 ){
+				memset(key_value_str,0,sizeof(key_value_str));
+				memset(key,0,sizeof(key));
+				memset(value,0,sizeof(value));
+				if(len > sizeof(key_value_str)) return NULL;
+				memcpy(key_value_str,start,len);
+				sscanf(key_value_str,"%[^=]=%s",key,value);
+				switch(CspKeyType(key)){
+					case CSP_KEY_TYPE_INSERT:
+						strcpy(key_insert,value);
+							err = CspRedisOperation(REDIS_DB_0,OPERATION_SET,value,key); //redis-cli select 0     event - insert  set	
+							#if CSP_RELEASE_DEBUG	
+							if(err == -1){
+								printf("INSERT  REDIS_DB_0,OPERATION_SET ");
+								printf("redis error\n");
+							}
+							#endif
+							err = CspRedisOperation(REDIS_DB_1,OPERATION_SET,key_insert,tform);//redis-cli select 1   event - tform	set
+							#if CSP_RELEASE_DEBUG	
+							if(err == -1){
+								printf("TFORM  REDIS_DB_1,OPERATION_SET ");
+								printf("redis error\n");
+							}
+							#endif
+						break;
+					case CSP_KEY_TYPE_DELETE:
+						strcpy(key_delete,value);
+							err = CspRedisOperation(REDIS_DB_0,OPERATION_SET,value,key); //redis-cli select 0     event - delete	set
+							#if CSP_RELEASE_DEBUG	
+							if(err == -1){
+								printf("DELETE  REDIS_DB_0,OPERATION_SET ");
+								printf("redis error\n");
+							}
+							#endif
+							err = CspRedisOperation(REDIS_DB_1,OPERATION_SET,key_delete,tform);//redis-cli select 1	   event - tform	set
+							#if CSP_RELEASE_DEBUG	
+							if(err == -1){
+								printf("TFORM  REDIS_DB_0,OPERATION_SET ");
+								printf("redis error\n");
+							}
+							#endif
+						break;
+					case CSP_KEY_TYPE_UPDATE:
+						strcpy(key_update,value);
+							err = CspRedisOperation(REDIS_DB_0,OPERATION_SET,value,key); //redis-cli select 0	 event -update 	set
+							#if CSP_RELEASE_DEBUG	
+							if(err == -1){
+								printf("UPDATE  REDIS_DB_0,OPERATION_SET ");
+								printf("redis error\n");
+							}
+							#endif
+							err = CspRedisOperation(REDIS_DB_1,OPERATION_SET,key_update,tform);//redis-cli select 1   event - tform		set
+							#if CSP_RELEASE_DEBUG	
+							if(err == -1){
+								printf("TFORM  REDIS_DB_1,OPERATION_SET ");
+								printf("redis error\n");
+							}
+							#endif
+						break;
+					case CSP_KEY_TYPE_TFORM:
+						strcpy(tform,value);
+						break;
+					case CSP_KEY_TYPE_WEVENT:// case cls request
+						strcpy(wevent,value);
+						strcpy(csp_file_info->cspData.event,wevent);
+						break;
+					default:
+						break;
+				}
+			}
+			else{
+				return NULL;
+			}
+
+			
+			start = end + 1;
+			if(start -body >= bodylen ) break;
+			
+		}
+		else {
+			break;
+		}
+		
+	}while(1);
+
+	return bodystart;
+}
+*/
+
+
+char *CspGetPostBodyValue(CSP_FILE_INFO * csp){
+	char *data=NULL, *start=NULL,*end=NULL,*webcontent = NULL;
+	int len = 0,bodylen= 0;
+	char url_content[CSP_WEBCONTENT_LEN];
+	start = data = csp->request_data;
+	end = strstr(data,CSP_KEYWD_END_4);
+	if(end == NULL) return NULL;
+	end+=strlen(CSP_KEYWD_END_4);
+	len = end-start;
+	if(len < 0) return NULL;
+
+	bodylen = csp->request_size - len;
+	if(bodylen > CSP_WEBCONTENT_LEN)
+		bodylen = CSP_WEBCONTENT_LEN;
+	memcpy(url_content,end,bodylen);
+	len = url_2_asc( csp->cspData.webContent,url_content,bodylen);
+	csp->cspData.webContent[len] = '\0';
+	webcontent = csp->cspData.webContent;
+	return webcontent;
+}
+
+void CspMvFile(char src_path[],char des_path[],int dir,char name[],int num){
+	char sname[CSP_PATH_LEN]={0},dname[CSP_PATH_LEN]={0};
+	sprintf(sname,"%s%d%s%lu",src_path,dir,name,num);
+	sprintf(dname,"%s%d%s%lu",des_path,dir,name,num);
+//	printf("%s->%s\n",sname,dname);
+	rename(sname,dname);
+}
+int CspWriteSql(CSP_FILE_INFO * csp_file_info){
+	char fullFilePath[CSP_PATH_LEN] = {0};
+	char path[CSP_PATH_LEN]={0};
+
+	char despath[CSP_PATH_LEN]={0};
+	char * pos;
+	static u_int64_t fnum = 0;
+	u_int64_t * num ;
+	char * times;
+	static int  maxrow = 1;
+	int fLen = 0;
+	int SqlQueryLen = 0;
+	fLen = strlen(DATA_JAVASCRIPT_ALART);
+	fLen += httplen;
+	
+
+		num = &sqlNum;
+		sprintf(path,"%s%s",SQL_TMP,CSP_SQL_FILE);
+		sprintf(despath,"%s%s",SQL_PATH,CSP_SQL_FILE);
+		times = sqltimes_csp;
+
+		memset(sqlQuery,0,SQL_MAX_LEN);
+		sprintf(sqlQuery,HBASE_VALUES_FMT,HBASE_VALUES);
+		SqlQueryLen = strlen(sqlQuery);
+		if(httplen > 0)
+			memcpy(sqlQuery+SqlQueryLen,httpptr,httplen);
+		SqlQueryLen +=httplen;
+		sqlQuery[SqlQueryLen]='\n';
+		SqlQueryLen+=1;
+		if((*num) %maxrow== 0){
+			fnum = *num;
+			memset(times,0,CSP_TIMES_LEN);
+			sprintf(times,"%s",csp_file_info->cspHead.times);
+		}
+		(*num)++;
+		sprintf(fullFilePath,"%s%d%s%lu",path,csp_file_info->cspHead.dir,times,fnum);
+		httpptr = NULL;
+		httplen = 0;
+		sqlFp = fopen(fullFilePath,"a+");
+		if(!sqlFp) return -1;
+
+	//fprintf(sqlFp,"%s",sqlQuery);
+	fwrite(sqlQuery,1,SqlQueryLen,sqlFp);
+	fflush(sqlFp);
+	fclose(sqlFp);
+	if((*num)%maxrow== 0){
+		//mv file
+		
+		CspMvFile(path,despath,csp_file_info->cspHead.dir,times,fnum);
+	}
+	
+	#if CSP_RELEASE_DEBUG
+	printf("sqlNum:%lu\n",sqlNum);
+	printf("alarmSqlNum:%lu\n",alarmSqlNum);
+	#endif
+	
+	return 0;
+
+}
+
+
+int  release(char * data,int type,CSP_FILE_INFO * csp_file_info){
+	int err;
+	if(type  ==AUDIT_CSP_TYPE_HIS_LOGON){
+
+			CspGetKeywordValue(data,CSP_KEYWD_SESSION,CSP_KEYWD_END_1,csp_file_info->cspData.session); 
+			CspGetKeywordValue(data,CSP_KEYWD_DEPARTMENT,CSP_KEYWD_END_1,csp_file_info->cspData.department);
+			CspGetKeywordValue(data,CSP_KEYWD_USERNAME,CSP_KEYWD_END_1,csp_file_info->cspData.userName);
+
+			err = CspRedisOperation(REDIS_DB_2,OPERATION_SET,csp_file_info->cspData.session,csp_file_info->cspData.userName,csp_file_info->conn);
+			#if CSP_RELEASE_DEBUG	
+			if(err == -1) {	
+				printf("SESSION REDIS_DB_1,OPERATION_SET ");
+				printf("redis error.\n");
+			}
+			#endif
+			CspRedisOperation(REDIS_DB_0,OPERATION_SET,csp_file_info->cspHead.userip,csp_file_info->cspData.userName,csp_file_info->conn);
+			err = CspRedisOperation(REDIS_DB_6,OPERATION_SET,csp_file_info->cspData.session,csp_file_info->cspData.department,csp_file_info->conn);
+			#if CSP_RELEASE_DEBUG	
+			if(err == -1) {
+				printf("SESSION  REDIS_DB_6,OPERATION_SET ");
+				printf("redis error.\n");
+			}
+			#endif
+			CspRedisOperation(REDIS_DB_6,OPERATION_SET,csp_file_info->cspHead.userip,csp_file_info->cspData.department,csp_file_info->conn);
+			//return -1;
+	}
+	else if(type  ==AUDIT_CSP_TYPE_PORTAL_LOGON){
+
+			CspGetKeywordValue(data,CSP_KEYWD_USERNAME_PORTAL,CSP_KEYWD_END_1,csp_file_info->cspData.userName);				
+		//	CspGetKeywordValue(data,CSP_KEYWD_SESSION,CSP_KEYWD_END_1,csp_file_info->cspData.session); 
+		//set redis in http packet
+	}
+	else if(type  ==AUDIT_CSP_TYPE_CLS){
+			if(csp_file_info->type == AUDIT_CSP_TYPE_HIS){
+				 CspGetKeywordValue(data,CSP_KEYWD_SESSION,CSP_KEYWD_END_2,csp_file_info->cspData.session);
+				err = CspRedisOperation(REDIS_DB_6,OPERATION_GET,csp_file_info->cspData.session,csp_file_info->cspData.department,csp_file_info->conn);//redis-cli select 1  get 
+				#if CSP_RELEASE_DEBUG
+				if(err == -1) {
+					printf("SESSION REDIS_DB_6,OPERATION_GET ");
+					printf("redis error.\n");
+				}
+				#endif
+				if(strlen(csp_file_info->cspData.department)==0){
+					CspRedisOperation(REDIS_DB_6,OPERATION_GET,csp_file_info->cspHead.userip,csp_file_info->cspData.department,csp_file_info->conn);
+				}
+
+				err = CspRedisOperation(REDIS_DB_2,OPERATION_GET,csp_file_info->cspData.session,csp_file_info->cspData.userName,csp_file_info->conn);//redis-cli select 1  get 
+					#if CSP_RELEASE_DEBUG
+					if(err == -1) {
+						printf("SESSION REDIS_DB_2,OPERATION_GET ");
+						printf("redis error.\n");
+					}
+					#endif
+					if(strlen(csp_file_info->cspData.userName) == 0){
+						CspRedisOperation(REDIS_DB_0,OPERATION_GET,csp_file_info->cspHead.userip,csp_file_info->cspData.userName,csp_file_info->conn);
+				}
+			}
+			else if(csp_file_info->type == AUDIT_CSP_TYPE_PORTAL){
+				CspGetKeywordValue(data,CSP_KEYWD_SESSION_PORTAL,CSP_KEYWD_END_2,csp_file_info->cspData.session);
+				CspGetKeywordValue(data,CSP_KEYWD_SESSION_DOC_PORTAL,CSP_KEYWD_END_2,csp_file_info->cspData.session);
+			
+				err = CspRedisOperation(REDIS_DB_3,OPERATION_GET,csp_file_info->cspData.session,csp_file_info->cspData.userName,csp_file_info->conn);//redis-cli select 1  get 
+				#if CSP_RELEASE_DEBUG
+				if(err == -1) {
+					printf("SESSION REDIS_DB_2,OPERATION_GET ");
+					printf("redis error.\n");
+				}
+				#endif
+				if(strlen(csp_file_info->cspData.userName) == 0){
+					CspRedisOperation(REDIS_DB_1,OPERATION_GET,csp_file_info->cspHead.userip,csp_file_info->cspData.userName,csp_file_info->conn);
+				}
+			}
+	}
+	else if(type == AUDIT_CSP_TYPE_CSP){
+			if(csp_file_info->type == AUDIT_CSP_TYPE_HIS){
+					 CspGetKeywordValue(data,CSP_KEYWD_SESSION,CSP_KEYWD_END_2,csp_file_info->cspData.session);
+					err = CspRedisOperation(REDIS_DB_6,OPERATION_GET,csp_file_info->cspData.session,csp_file_info->cspData.department,csp_file_info->conn);//redis-cli select 1  get 
+					#if CSP_RELEASE_DEBUG
+					if(err == -1) {
+						printf("SESSION REDIS_DB_6,OPERATION_GET ");
+						printf("redis error.\n");
+					}
+					#endif
+					if(strlen(csp_file_info->cspData.department)==0){
+						CspRedisOperation(REDIS_DB_6,OPERATION_GET,csp_file_info->cspHead.userip,csp_file_info->cspData.department,csp_file_info->conn);
+					}
+
+					
+					err = CspRedisOperation(REDIS_DB_2,OPERATION_GET,csp_file_info->cspData.session,csp_file_info->cspData.userName,csp_file_info->conn);//redis-cli select 1  get 
+					#if CSP_RELEASE_DEBUG
+						if(err == -1) {
+							printf("SESSION REDIS_DB_2,OPERATION_GET ");
+							printf("redis error.\n");
+						}
+					#endif
+					if(strlen(csp_file_info->cspData.userName) == 0){
+						CspRedisOperation(REDIS_DB_0,OPERATION_GET,csp_file_info->cspHead.userip,csp_file_info->cspData.userName,csp_file_info->conn);
+					}
+			}
+			else if(csp_file_info->type == AUDIT_CSP_TYPE_PORTAL){
+					CspGetKeywordValue(data,CSP_KEYWD_SESSION_PORTAL,CSP_KEYWD_END_2,csp_file_info->cspData.session);
+					CspGetKeywordValue(data,CSP_KEYWD_SESSION_DOC_PORTAL,CSP_KEYWD_END_2,csp_file_info->cspData.session);
+			
+				err = CspRedisOperation(REDIS_DB_3,OPERATION_GET,csp_file_info->cspData.session,csp_file_info->cspData.userName,csp_file_info->conn);//redis-cli select 1  get 
+					#if CSP_RELEASE_DEBUG
+					if(err == -1) {
+						printf("SESSION REDIS_DB_2,OPERATION_GET ");
+						printf("redis error.\n");
+					}
+					#endif
+				if(strlen(csp_file_info->cspData.userName) == 0){
+					CspRedisOperation(REDIS_DB_1,OPERATION_GET,csp_file_info->cspHead.userip,csp_file_info->cspData.userName,csp_file_info->conn);
+				}
+			}
+	}
+
+	return 0;
+}
+
+int CspRequestReleaseData(CSP_FILE_INFO * csp_file_info){
+	char *data,*start,*end;
+	char * pos;
+	char requestUrl[CSP_URL_LEN] = {0};
+	unsigned int len = 0;
+	int err = 0;
+	int requestType;
+	data = csp_file_info->request_data;
+
+	if((start = strstr(data,"POST "))){
+		start += 5;
+		requestType = CSP_REQUEST_TYPE_POST;
+		CspGetPostBodyValue(csp_file_info);
+	}
+	else if((start = strstr(data,"GET "))){
+		start+= 4;
+		requestType = CSP_REQUEST_TYPE_GET;
+	}
+	else{
+		return -1;
+	}
+	
+	if((end = strstr(start," HTTP/1.1\r\n"))){
+		len = end -start;
+		if( len  < 0)
+			return -1;
+		
+		memset(requestUrl,0,sizeof(requestUrl));
+		
+		memset(csp_file_info->cspData.requestUrl, 0,sizeof(csp_file_info->cspData.requestUrl));
+		if(len < CSP_URL_LEN){
+			memcpy(csp_file_info->cspData.requestUrl,start,len);
+			memcpy(requestUrl,start,len);
+		}
+		else{
+			len = CSP_URL_LEN-1;
+			memcpy(csp_file_info->cspData.requestUrl,start,len);
+			memcpy(requestUrl,start,len);
+		}
+
+
+		
+	}
+	else return -1;
+
+	if(strncmp(requestUrl,CONGOUS_URL_PASSPORT,strlen(CONGOUS_URL_PASSPORT))==0){
+		return -1;
+	}
+
+	if((pos = strstr(requestUrl,"?"))){
+		*pos = '\0';
+	}
+
+	start = end;	
+
+	if(requestType == CSP_REQUEST_TYPE_GET){
+
+			if(strcasestr(requestUrl,".gif")){
+				return -1;
+			}
+			else if(strcasestr(requestUrl,".png")){
+				return -1;
+			}
+			else if(strcasestr(requestUrl,".jpg")){
+				return -1;
+			}
+			else if(strcasestr(requestUrl,".js")){
+				return -1;
+			}
+			else if(strcasestr(requestUrl,".jsp")){
+				return -1;
+			}
+			else if(strcasestr(requestUrl,".css")){
+				return -1;
+			}
+			else if(strcasestr(requestUrl,".dll")){
+				return -1;
+			}
+			else if(strcasestr(requestUrl,".exe")){
+				return -1;
+			}
+			
+
+			
+						
+		/*
+			if(strstr(requestUrl,"dhcvisanopwait")){
+				return -1;
+			}
+			if(strstr(requestUrl,"dhcvispatwait")){
+				return -1;
+			}
+	//		dhcrisappbill  dhcnuripexeclist
+
+			if(strstr(requestUrl,"dhcrisappbill")){
+				return -1;
+			}
+
+			if(strstr(requestUrl,"dhcnuripexeclist")){
+				return -1;
+			}
+			if(strstr(requestUrl,"dhc.epr.messagetab.csp")){
+				return -1;
+			}
+			if(strstr(requestUrl,"dhc.bdp.ext.sys.csp")){
+				return -1;
+			}	
+			if(!strstr(requestUrl,".csp") &&!strstr(requestUrl,".cls"))
+				return -1;
+				*/
+	}
+	else if(requestType == CSP_REQUEST_TYPE_POST){
+		return 1;
+		if(!strstr(requestUrl,".csp") &&!strstr(requestUrl,".cls"))
+			return -1;
+
+	}
+
+	if(memcmp(requestUrl,AUDIT_CSP_REQUEST_LOGON_HIS,strlen(AUDIT_CSP_REQUEST_LOGON_HIS) )== 0 ){
+		csp_file_info->cspData.appId = AUDIT_CSP_TYPE_HIS_LOGON;
+	}
+	else if(memcmp(requestUrl,AUDIT_CSP_REQUEST_LOGON_PORTAL,strlen(AUDIT_CSP_REQUEST_LOGON_PORTAL)) == 0){
+		csp_file_info->cspData.appId = AUDIT_CSP_TYPE_PORTAL_LOGON;
+	}
+	else if(strstr(requestUrl,".cls")){
+		csp_file_info->cspData.appId = AUDIT_CSP_TYPE_CLS;
+	}
+	else if(strstr(requestUrl,".csp")){
+		csp_file_info->cspData.appId = AUDIT_CSP_TYPE_CSP;
+	}
+	else{
+		csp_file_info->cspData.appId = AUDIT_CSP_TYPE_OTHERS;
+	}
+
+	if(start == NULL)  return -1;
+
+	return release(start,csp_file_info->cspData.appId,csp_file_info);
+	 
+}
+
+int CspResponseHeadRelease(CSP_FILE_INFO * csp){
+	char * data,*start,*end;
+	char keyValueStr[CSP_KEYVALUE_LEN]={0};
+	char httpHead[CSP_HTTPHEAD_LEN]={0};
+	char key[CSP_KEY_LEN]={0};
+	char value[CSP_VALUE_LEN]={0};
+	int len,httpHeadLen;
+	unsigned int data_len;
+	start = data = csp->response_data;
+	data_len = csp->response_size;
+	
+	if(strncmp(start,"HTTP",4)!=0) return -2;
+	start = strstr(start,"\r\n");
+	if(start == NULL) return -1;
+	start +=4;
+	end = strstr(start,CSP_KEYWD_END_4);
+	if(end == NULL) return -1;
+	end += 4;
+	httpHeadLen = end - data;
+	if(httpHeadLen < 0) return -1;
+	if(httpHeadLen > sizeof(httpHead)){
+		return -2;
+	}
+//	printf("httpHeadLen = %d\n",httpHeadLen);
+	strncpy(httpHead,data,httpHeadLen);
+	start = httpHead;
+
+	csp->cspHttpHead.charset[0]='0';
+	csp->cspHttpHead.charset[1]='\0';
+	//printf("id:%d\n",csp->cspData.appId);
+	if(csp->cspData.appId == AUDIT_CSP_TYPE_PORTAL_LOGON){
+		if(!start) return -1;
+		CspGetKeywordValue(data,CSP_KEYWD_SESSION_PORTAL,CSP_KEYWD_END_2,csp->cspData.session);	
+		CspGetKeywordValue(data,CSP_KEYWD_SESSION_DOC_PORTAL,CSP_KEYWD_END_2,csp->cspData.session);
+//		printf("username:%s\n",csp->cspData.userName);
+//		printf("session:%s\n",csp->cspData.session);
+		CspRedisOperation(REDIS_DB_3,OPERATION_SET,csp->cspData.session,csp->cspData.userName,csp->conn);
+		CspRedisOperation(REDIS_DB_1,OPERATION_SET,csp->cspHead.userip,csp->cspData.userName,csp->conn);
+	//	return -1;
+	}
+
+//	printf("%s\n",httpHead);
+	if((start =strstr(httpHead,"charset="))){
+		
+		start +=8;
+	//	printf("start:%s\n",start);
+		if((end  = strstr(start,"\r\n"))){
+		//	printf("end :%s\n",end);
+			len = end -start;
+			if(len > 0 &&len < 10){
+				memcpy(csp->cspHttpHead.charset,start,len);
+			}
+		}
+	}
+//	printf("charset=%s\n",csp->cspHttpHead.charset);
+	start = httpHead;
+	len = 0;
+	do{
+		if((end = strstr(start,CSP_KEYWD_END_3))){
+			len = end - start;
+			if(len < 0) return -1;
+			memset(keyValueStr,0,sizeof(keyValueStr));
+			strncpy(keyValueStr,start,len);
+			memset(key,0,sizeof(key));
+			memset(value,0,sizeof(value));
+			sscanf(keyValueStr,"%[^:]: %s",key,value);
+			if(strcasecmp(key,CSP_HTTP_KW_CONTENT_ENCODING) == 0){
+				strcpy(csp->cspHttpHead.contenEncode,value);
+			}
+			else if(strcasecmp(key,CSP_HTTP_KW_TRANS_ENCODING) == 0){
+				strcpy(csp->cspHttpHead.transEncode,value);
+			}
+			else if(strcasecmp(key,CSP_HTTP_KW_CONTENT_LENGTH) == 0){
+				strcpy(csp->cspHttpHead.contentLength,value);
+			}
+		}
+		start = end + 2;
+		if(start - httpHead == httpHeadLen -2) 
+			break;
+	}
+	while(1);
+	
+	return 0;
+}
+int CspGetTform(char *str,char *tform){
+			char * tformpos,*end;
+			int len;
+			tformpos = strstr(str,"TFORM");
+			if(tformpos == NULL  ){
+				return  -1;
+			}
+			tformpos = strstr(tformpos,"VALUE=\"");
+			if(tformpos == NULL){
+				return -1;				
+			}
+			tformpos+=7;
+			end = strstr(tformpos,"\"");
+			if(!end){
+				return -1;
+			}
+			if((len = end - tformpos)< 0 ) {
+				return -1;
+			}
+			strncpy(tform,tformpos,len);
+			return 0;
+}
+int CspResponseReleaseData(CSP_FILE_INFO * csp){
+	char *data,*start, *body,*unzipstr,*unchunked,*end;
+	int bodylen,headlen;
+	int encodeStatus = 0;
+	unsigned long unchunklen =0;
+	unsigned long unziplen = 0;
+	unsigned int data_len;
+	if(csp->response_data == NULL) return -1;
+	data = csp->response_data;
+	data_len = csp->response_size;
+	start = data;
+	end = strstr(data,"Content-Type:");
+	if(!end) return -1;
+	end += strlen(CSP_KEYWD_END_3);
+	end = strstr(end,CSP_KEYWD_END_4);
+	if(!end) return -1;
+	end+=strlen(CSP_KEYWD_END_4);
+	headlen = end - start;
+	if(headlen < 0) return -1;
+	bodylen = data_len - headlen;
+	if(bodylen < 0) return -1;
+	httpptr = NULL;
+	httplen = 0;
+	
+	if(strcasecmp(csp->cspHttpHead.transEncode,"chunked") == 0){
+		encodeStatus += CSP_HTTP_ENCODING_STATUS_CHUNK;
+	}
+
+	if(strcasecmp(csp->cspHttpHead.contenEncode,"gzip") == 0){
+		encodeStatus += CSP_HTTP_ENCODING_STATUS_GZIP;
+	}
+
+	//memset(httpContent,0,CSP_FILE_MAX_LEN*sizeof(char));
+	//memset(httpUnChunked,0,CSP_FILE_MAX_LEN*sizeof(char));
+	//memset(httpUzip,0,CSP_FILE_MAX_LEN*sizeof(char));
+	if(bodylen > CSP_FILE_MAX_LEN*sizeof(char))
+		return -1;
+	
+	memcpy(httpContent,end,bodylen);
+	switch(encodeStatus){
+		case 0:
+			httpptr = httpContent;
+			httplen = bodylen;
+			return 0;
+		case CSP_HTTP_ENCODING_STATUS_CHUNK:
+			if(dechunk(httpContent,httpUnChunked,&unchunklen,bodylen,CSP_FILE_MAX_LEN*sizeof(char)) == NULL){
+				return -1;
+			}
+			httpptr = httpUnChunked;
+			httplen = unchunklen;
+			return 0;
+		case CSP_HTTP_ENCODING_STATUS_GZIP:
+			unziplen = CSP_FILE_MAX_LEN*sizeof(char) -1;
+			if(gzdecompress((unsigned char *)httpContent,bodylen,(unsigned char *)httpUzip,&unziplen) < 0){
+				return -1;
+			}
+
+			httpptr = httpUzip;
+			httplen = unziplen;
+			return 0;
+		case CSP_HTTP_ENCODING_STATUS_CHUNK_GZIP:
+
+			if(dechunk(httpContent,httpUnChunked,&unchunklen,bodylen,CSP_FILE_MAX_LEN*sizeof(char)) == NULL){
+				return -1;
+			}
+			unziplen = CSP_FILE_MAX_LEN*sizeof(char) -1;
+			if(gzdecompress((unsigned char *)httpUnChunked,unchunklen,(unsigned char *)httpUzip,&unziplen)<0){
+				return -1;
+			}
+			httpptr = httpUzip;
+			httplen = unziplen;
+			return 0;
+		default:
+			break;
+	}
+
+	
+	return 0;
+}
+int  CspRequestFilePro(CSP_FILE_INFO * csp){
+		return CspRequestReleaseData(csp);
+}
+
+int CspResponseFilePro(CSP_FILE_INFO * csp){
+		int ret=0;
+		TEST_EFF_DECLARED
+		TEST_FUN_EFF("CspResponseHeadRelease",ret = CspResponseHeadRelease(csp);)
+		if(ret == 0){
+			TEST_FUN_EFF("CspResponseReleaseData",ret = CspResponseReleaseData(csp);)
+			return ret;
+		}
+		return -1;
+}
+void CspSigFun(int sig){
+	
+
+	if(cspFileInfo.conn){
+		redisFree(cspFileInfo.conn);
+		cspFileInfo.conn=NULL;
+	}
+	switch(sig){
+		case SIGINT:
+			unlink(fullResponseFile);
+			unlink(fullRequestFile);	
+			exit(0);
+		case SIGTERM:
+			unlink(fullResponseFile);
+			unlink(fullRequestFile);	
+			exit(0);
+		case SIGSEGV:
+			printf("signale .\n");
+			exit(0);
+			break;
+		case SIGBUS:
+			unlink(fullResponseFile);
+			unlink(fullRequestFile);
+			printf("signale .\n");
+			exit(0);
+			break;
+		default:
+			exit(0);
+			break;
+	}	
+}
+
+
+int NC_daemon_audit(void)
+{  
+	pid_t pid;
+	int ret;
+	if ((pid = fork()) < 0){
+		return -1;
+	}
+	else if (pid != 0){
+		exit(0); /* parent goes bye-bye */
+	}
+	if((ret=setsid()) < 0) /* become session leader */
+	{
+		printf("unable to setsid.\n");
+	}
+	 setpgrp();
+	 return 0;
+}
+
+void SetMac(char *dest,char *src){
+	int i,j;
+	j=0;
+	for(i=0;i<strlen(src);i++){
+		dest[j]=src[i];
+		
+		j++;
+		if(j%3==2){
+			dest[j]='-';
+			j++;
+		}
+		
+	}
+	dest[j-1]='\0';
+}
+int GetPolicyTime(unsigned long time){
+	int  time_sec=0;
+	int  time_min=0;
+	const int time_zone = 8*60;
+	const int week_min = 7*24*60;
+	const int day_min = 24*60;
+	const int monday_start = 4*24*60;
+	int res;
+	time_sec = time/1000000;
+	time_min = time_sec/60;
+
+	res = (time_min + time_zone - monday_start)%week_min;
+
+	return res;
+}
+void GetValues(CSP_FILE_INFO *csp,char *filename){
+	// /dev/shm/1/10_2887326051_000fe25c06a0_60100_168466306_80c16ef872cd_1433_0_2_1440906275885842_request
+	unsigned short sport;
+	unsigned short dport;
+	unsigned short app_id;
+	unsigned short user_id;
+	unsigned int sip;
+	unsigned int dip;
+	unsigned int reqsize;
+	unsigned int respsize;
+	unsigned int seq;
+	unsigned long time;
+	unsigned short dir;
+	int policy_time;
+	char smac[20]={0},dmac[20]={0};
+	
+	int relval;
+	relval = sscanf(filename, "/dev/shm/%hu/%hu_%u_%[^_]_%hu_%u_%[^_]_%hu_%hu_%u_%lu_request",
+                   &csp->cspHead.dir,&app_id, &sip, smac,&sport, &dip, dmac,&dport, &user_id,&seq , &time);
+
+	//printf("%hu,%u,%s,%hu,%u,%s,%hu,%hu,%u,%lu\n", app_id, sip, smac,sport, dip, dmac,dport, user_id,seq , time);
+	
+	if(app_id == 100) csp->type=1;
+	else if(app_id == 110){
+		csp->type = 30;
+	}
+ 	else if(app_id == 40) csp->type=4;
+	
+	else if(app_id>19 && app_id<30) csp->type=2;
+	sip = htonl(sip);
+	dip = htonl(dip);
+	sprintf(csp->cspHead.id,"%u",app_id);
+	sprintf(csp->cspHead.serport,"%u",dport);
+	sprintf(csp->cspHead.cliport,"%u",sport);
+	sprintf(csp->cspHead.userid,"%u",user_id);
+	sprintf(csp->cspHead.times,"%lu",time);
+	get_audit_time_3(csp->cspHead.table);
+	inet_ntop(AF_INET,(void*)(&sip),csp->cspHead.userip,sizeof(csp->cspHead.userip));
+	inet_ntop(AF_INET,(void*)(&dip),csp->cspHead.desip,sizeof(csp->cspHead.desip));
+	SetMac(csp->cspHead.srcmac,smac);
+	get_mac_str(csp->cspHead.userip,csp->cspHead.srcmac);
+	SetMac(csp->cspHead.desmac,dmac);
+	policy_time = GetPolicyTime(time);
+	sprintf(csp->cspHead.policytime,"%d",policy_time);
+//	printf("policytime:%s\n",csp->cspHead.policytime);
+//	sprintf(csp->cspHead.srcmac,"00-00-00-00-00-00");
+//	sprintf(csp->cspHead.desmac,"11-11-11-11-11-11");
+}
+static int IsOld(char *filePath, int secs) {
+    time_t t;
+	int retval;
+    struct stat ft;
+
+    retval = time(&t);
+    if (retval < 0) return 0;
+
+    retval = stat(filePath, &ft);
+    if (retval < 0) return 0;
+
+    if (t - ft.st_mtime > secs) return 1;
+    return 0;
+}
+
+int getfilename(char * fullpath,char *filename,char *filepath,int len){
+	int i=0,position=0,lastposition=0;
+	int flen;
+	int j=0;
+	for(i=len-1;i>0;i--){
+		if(fullpath[i]=='/'){
+			j++;
+			if(j == 1){
+				position=i;
+				lastposition = position;
+				flen = len-position;
+				if(flen < 0) return 0;
+				strncpy(filename,&fullpath[position+1],flen-1);
+				strncpy(filepath,fullpath,len-flen+1);
+			}
+			if(j == 2){
+				position = i;
+			}
+
+			return 1;
+		}		
+	}
+	return 0;
+}
+int check_request_type(char * request_file){
+			unsigned int fsize =0;
+			unsigned int readsize = 0;
+			char buf[1024]={0};
+			char request_url[5120]={0};
+			char *start=NULL,*end=NULL,*pos=NULL;
+			int Fp=0;
+			int len=0;
+		//	FILE * Fp = NULL;
+			fsize = GetCspFileSize(request_file); 
+			if(fsize <=0){
+				#if 0
+				printf("fsize < 0 ,%s\n",request_file);
+				#endif
+				return -1;
+			}
+
+		//	Fp = fopen(fname,"r+");
+			Fp = open(request_file,O_RDONLY);
+			if(Fp<0){ 
+		#if 0
+				perror("open:");
+				printf("open %s file failed. \n",request_file);
+		#endif
+				return	-1;
+			}
+			if(fsize > 999){
+				len = 999;
+			}else{
+				len = fsize;
+			}
+			AuditRead(Fp,buf,len);
+	//		readsize = fread(buf,1,fsize,Fp);
+			close(Fp);
+			//fclose(Fp);
+			
+			start = buf;
+			if((end = strstr(start," HTTP/1.1\r\n"))){
+				len = end -start;
+				if( len  < 0){
+					return -1;
+				}
+				if(len < 5119){
+					memcpy(request_url,start,len);
+				}
+				else{
+					len = 5119;
+					memcpy(request_url,start,len);
+				}
+			}
+			else return -1;
+	//		printf("requesturl:%s\n",request_url);
+			if(strncmp(request_url,CONGOUS_URL_PASSPORT,strlen(CONGOUS_URL_PASSPORT))==0){
+				return -1;
+			}
+
+			if((pos = strstr(request_url,"?"))){
+				*pos = '\0';
+			}
+
+
+			if(strcasestr(request_url,".gif")){
+				return -1;
+			}
+			if(strcasestr(request_url,".png")){
+				return -1;
+			}
+			if(strcasestr(request_url,".jpg")){
+				return -1;
+			}
+			if(strcasestr(request_url,".js")){
+				return -1;
+			}
+			if(strcasestr(request_url,".jsp")){
+				return -1;
+			}
+			if(strcasestr(request_url,".css")){
+				return -1;
+			}
+			if(strcasestr(request_url,".dll")){
+				return -1;
+			}
+			if(strcasestr(request_url,".exe")){
+				return -1;
+			}
+			if(strstr(request_url,"dhcvisanopwait")){
+				return -1;
+			}
+			if(strstr(request_url,"dhcvispatwait")){
+				return -1;
+			}
+
+			if(strstr(request_url,"dhcrisappbill")){
+				return -1;
+			}
+
+			if(strstr(request_url,"dhcnuripexeclist")){
+				return -1;
+			}
+			if(strstr(request_url,"dhc.epr.messagetab.csp")){
+				return -1;
+			}
+			if(strstr(request_url,"dhc.bdp.ext.sys.csp")){
+				return -1;
+			}	
+//			if(!strstr(request_url,".csp") &&!strstr(request_url,".cls")){
+//				return -1;
+//			}
+	return 1;
+}
+int BindCpu(int toBind){
+	cpu_set_t mask;
+	CPU_ZERO(&mask);    //置空 
+	#if U2_DEV
+		if(toBind >= 3){
+			toBind++;
+		}
+	#endif
+   	CPU_SET(toBind,&mask);
+	if (sched_setaffinity(0, sizeof(mask), &mask) == -1)//设置线程CPU亲和力  
+    {  
+//       printf("warning: could not set CPU affinity!\n");  
+	   return -1;
+    } 
+//	printf("set CPU affinity success!\n");
+	return 0;
+}
+
+
+int main(int argc,char * argv[]){
+//	if(argc ==2)
+//		NC_daemon_audit();
+	
+	char *pos;
+	int flag=0;
+	int ret=0;
+	unsigned long fsize;
+	CACHE_POLICY_CONF * policy=NULL;
+	httpptr=NULL;
+	httplen=0;
+	TEST_EFF_DECLARED
+	
+
+// 	/dev/shm/1/10_2887326051_000fe25c06a0_60100_168466306_80c16ef872cd_1433_0_2_1440906275885842_request
+
+//	printf("after policy mem\n");
+	sprintf(fullRequestFile,"%s",argv[1]);
+
+	if(check_request_type(fullRequestFile) == -1){
+		unlink(fullResponseFile);
+		unlink(fullRequestFile);		
+	//	printf("1\n");
+		return 0;		
+	}
+
+	pos = strstr(fullRequestFile,"_request");
+	*pos = '\0';
+	sprintf(fullResponseFile,"%s_response",fullRequestFile);
+	*pos='_';
+	
+	if((fsize = GetCspFileSize(fullResponseFile))<=100){
+		unlink(fullResponseFile);
+		unlink(fullRequestFile);
+	//	printf("2\n");
+		return 0;
+	}
+
+	memset(&cspFileInfo,0,sizeof(CSP_FILE_INFO));
+	
+	policy = (CACHE_POLICY_CONF*)get_audit_cache_policy_shm();
+	if(!policy){
+		return 0;
+	}
+
+//	TEST_FUN_EFF("GetValues",GetValues(&cspFileInfo,fullRequestFile);)
+	
+	TEST_FUN_EFF("GetValues",GetValues(&cspFileInfo,fullRequestFile);)
+	#if U2_DEV
+		BindCpu(cspFileInfo.cspHead.dir%7);
+	#else
+		BindCpu(cspFileInfo.cspHead.dir%3);
+	#endif
+	
+	if(cspFileInfo.type == 30){
+		if(fsize < 600){
+			unlink(fullResponseFile);
+			unlink(fullRequestFile);
+			return 0;
+		}
+		cspFileInfo.type = 1;
+		TEST_FUN_EFF("policy_match",ret = policy_match(&cspFileInfo,policy);)
+		cspFileInfo.type = 30;
+	}
+	else{
+		TEST_FUN_EFF("policy_match",ret = policy_match(&cspFileInfo,policy);)
+	}
+	if(ret == 0){
+		unlink(fullResponseFile);
+		unlink(fullRequestFile);		
+	//	printf("3\n");
+		return 0;
+	}
+	signal(SIGINT,CspSigFun);
+	signal(SIGTERM,CspSigFun);
+    signal(SIGSEGV,CspSigFun);
+		
+
+		if(atoi(cspFileInfo.cspHead.id) ==40){
+			; 
+		}
+		else if(atoi(cspFileInfo.cspHead.id) <100||atoi(cspFileInfo.cspHead.id) >=200) {
+		//	printf("4\n");
+			return 0;
+		}
+
+		
+		if(access(fullResponseFile,0)!=0){
+			flag = 0;
+		}
+		else{
+			flag = 1;
+		}
+		
+		TEST_FUN_EFF("CspDoubleFileInit",ret = CspDoubleFileInit(fullRequestFile,fullResponseFile,&cspFileInfo);)
+			if(argc == 2 ){
+				TEST_FUN_EFF("unlink(response)",unlink(fullResponseFile);)
+				TEST_FUN_EFF("unlink(request)",unlink(fullRequestFile);)
+			}
+
+			if(ret == -1){
+			//	printf("5\n");
+				return 0;
+			}
+			
+
+			cspFileInfo.conn = redisConnect(REDISSERVERHOST,REDISSERVERPORT);	
+
+			if(cspFileInfo.conn->err){
+				printf("%s\n",cspFileInfo.conn->errstr);
+				redisFree(cspFileInfo.conn);
+				cspFileInfo.conn=NULL;
+				cspFileInfo.conn = redisConnect(REDISSERVERHOST,REDISSERVERPORT);
+				if(cspFileInfo.conn->err){
+					redisFree(cspFileInfo.conn);
+					cspFileInfo.conn = NULL;
+					printf("can not connect  to redis server.\n");
+					return -1;					
+				}
+			}
+
+			
+		 	TEST_FUN_EFF("CspRequestFilePro",ret = CspRequestFilePro(&cspFileInfo);)
+			if(ret < 0){
+				redisFree(cspFileInfo.conn);
+				cspFileInfo.conn = NULL;
+			//	printf("6\n");
+				return 0;
+			}
+
+			//有response
+			if( flag == 1 ){
+				TEST_FUN_EFF("CspResponseFilePro",ret = CspResponseFilePro(&cspFileInfo);)
+				if(ret < 0){
+					redisFree(cspFileInfo.conn);
+					cspFileInfo.conn = NULL;
+				//	printf("7\n");
+					return 0;
+				}
+			}
+
+			redisFree(cspFileInfo.conn);
+			cspFileInfo.conn = NULL;
+			TEST_FUN_EFF("CspWriteSql",ret = CspWriteSql(&cspFileInfo))
+			if(ret < 0){
+		//		printf("8\n");
+				return 0;
+			}
+		//	finish = get_usec_time();
+		//	printf("his runtime = %lu nanosec.\n",finish-start);
+	//	printf("10\n");
+		return 0;
+
+#undef  __USE_GNU
+}
+
+
+#if NOSYSTEM
+
+int is_file_ready(char *filename)
+{
+	  time_t now;
+	  struct stat statbuf;   
+    if (stat(filename, &statbuf) == -1) 
+    {   
+        printf("Get stat on %s Error：%s\n",   
+                filename, strerror(errno));   
+        return -1;   
+    }   
+    time(&now);
+    if(now-statbuf.st_mtime>5)
+    return 1;
+    else 
+    if(statbuf.st_mtime-now>10)
+    return 1;
+    else    
+    return 0;   
+}
+
+
+int main(int argc, char **argv)
+{
+	int i;
+	char dirname[1024];
+	char filename[1024];
+	char filename_request[1024];
+	char tempstr[1024];
+	char command[2048];
+	int type=0;
+	int file_count=0;
+	DIR *dirp;
+	unsigned long start,finish;   
+  struct dirent *direntp; 
+  	char *pos;
+	int flag=0;
+	int ret=0;
+	CACHE_POLICY_CONF * policy=NULL;
+	httpptr=NULL;
+	httplen=0;
+	TEST_EFF_DECLARED
+	if(argc == 2)
+		NC_daemon_audit();
+	
+	
+
+	sprintf(dirname,"/dev/shm/%s",argv[1]);
+	 while(1)
+	 {
+		file_count=0;
+		start = get_usec_time();
+		
+	 if ((dirp = opendir(dirname)) != NULL) 
+	 {   
+     
+    while ((direntp = readdir(dirp)) != NULL)
+    {   
+        sprintf(filename,"/dev/shm/%s/%s",argv[1],direntp->d_name); 
+     	memset(tempstr,0,1024);
+	if((strstr(direntp->d_name,"request")!=NULL)&&(is_file_ready(filename)))
+        {
+        	if(sscanf(direntp->d_name,"%d_%s",&type,tempstr)==2)
+        	{
+        	/*
+        		if(type==10)
+        		{
+        			sprintf(command,"/usr/inp/bin/sqlserver1433_10_processing %s",filename);
+					TEST_FUN_EFF("10",system(command);)
+        			}
+        		else
+        		if(type==20)
+        		{
+        			sprintf(command,"/usr/inp/bin/cache1972_v50_20_processing %s",filename);
+					TEST_FUN_EFF("20",system(command);)
+        			}
+        		else
+        		if(type==21)
+        		{
+        			sprintf(command,"/usr/inp/bin/cache1972_v52_21_processing %s",filename);
+					TEST_FUN_EFF("21",system(command);)
+        			}
+        		else
+        		if(type==22)
+        		{
+        			sprintf(command,"/usr/inp/bin/cache1972_v2010_22_processing %s",filename);
+					TEST_FUN_EFF("22",system(command);)
+        		}
+        		else
+        		if(type==23)
+        		{
+        			sprintf(command,"/usr/inp/bin/cache1972_v2015_23_processing %s",filename);
+					TEST_FUN_EFF("23",system(command);)
+
+        			}
+        		else*/
+        		if(type==40||((type>=100)&&(type<200)))
+        		{
+        				st = get_usec_time();
+        	//		sprintf(command,"/usr/inp/bin/cache57772_40_processing %s",filename);
+					policy = (CACHE_POLICY_CONF*)get_audit_cache_policy_shm();
+						if(!policy){
+							continue;
+						}
+					//	/dev/shm/1/10_2887326051_000fe25c06a0_60100_168466306_80c16ef872cd_1433_0_2_1440906275885842_request
+					
+						
+						sprintf(fullRequestFile,"%s",filename);
+						pos = strstr(fullRequestFile,"_request");
+						*pos = '\0';
+						sprintf(fullResponseFile,"%s_response",fullRequestFile);
+						*pos='_';
+					
+						memset(&cspFileInfo,0,sizeof(CSP_FILE_INFO));
+						TEST_FUN_EFF("GetValues",GetValues(&cspFileInfo,fullRequestFile);)
+						TEST_FUN_EFF("policy_match",ret = policy_match(&cspFileInfo,policy);)
+						if(ret == 0){
+							unlink(fullResponseFile);
+							unlink(fullRequestFile);
+							continue;
+						}
+						signal(SIGINT,CspSigFun);
+						signal(SIGTERM,CspSigFun);
+						signal(SIGSEGV,CspSigFun);
+							
+					/*
+							if(atoi(cspFileInfo.cspHead.id) ==40){
+								; 
+							}
+							else if(atoi(cspFileInfo.cspHead.id) <100||atoi(cspFileInfo.cspHead.id) >=200) {
+								continue;
+							}
+					*/
+							
+							if(access(fullResponseFile,0)!=0){
+								flag = 0;
+							}
+							else{
+								flag = 1;
+							}
+							
+							TEST_FUN_EFF("CspDoubleFileInit",ret = CspDoubleFileInit(fullRequestFile,fullResponseFile,&cspFileInfo);)
+								if(argc == 2 ){
+									TEST_FUN_EFF("unlink(response)",unlink(fullResponseFile);)
+									TEST_FUN_EFF("unlink(request)",unlink(fullRequestFile);)
+								}
+					
+								if(ret == -1){
+									continue;
+								}
+								
+					
+								cspFileInfo.conn = redisConnect(REDISSERVERHOST,REDISSERVERPORT);	
+					
+								if(cspFileInfo.conn->err){
+									printf("%s\n",cspFileInfo.conn->errstr);
+									redisFree(cspFileInfo.conn);
+									cspFileInfo.conn=NULL;
+									cspFileInfo.conn = redisConnect(REDISSERVERHOST,REDISSERVERPORT);
+									if(cspFileInfo.conn->err){
+										redisFree(cspFileInfo.conn);
+										cspFileInfo.conn = NULL;
+										printf("can not connect  to redis server.\n");
+										continue;					
+									}
+								}
+					
+								
+								TEST_FUN_EFF("CspRequestFilePro",ret = CspRequestFilePro(&cspFileInfo);)
+								if(ret < 0){
+									redisFree(cspFileInfo.conn);
+									cspFileInfo.conn = NULL;
+									continue;
+								}
+					
+								//有response
+								if( flag == 1 ){
+									TEST_FUN_EFF("CspResponseFilePro",ret = CspResponseFilePro(&cspFileInfo);)
+									if(ret < 0){
+										redisFree(cspFileInfo.conn);
+										cspFileInfo.conn = NULL;
+										continue;
+									}
+								}
+					
+								redisFree(cspFileInfo.conn);
+								cspFileInfo.conn = NULL;
+								TEST_FUN_EFF("CspWriteSql",ret = CspWriteSql(&cspFileInfo))
+								if(ret < 0){
+									continue;
+								}
+								fi =get_usec_time();
+								
+							//	finish = get_usec_time();
+								printf("his runtime = %lu nanosec.\n",fi-st);
+							 file_count++;
+
+
+					//TEST_FUN_EFF("40",system(command);)
+
+        		}
+        	/*	else
+        		if((type==30)||(type==31))
+        		{
+        			sprintf(command,"/usr/inp/bin/oracle1521_30_processing %s",filename);
+					TEST_FUN_EFF("30|31",system(command);)
+        		}
+*/
+        	 	
+        		
+        		}
+        	
+        }
+        else
+         if((strstr(direntp->d_name,"response")!=NULL)&&(is_file_ready(filename)))
+        {
+        	strncpy(tempstr,filename,strlen(filename)-8);
+        	sprintf(filename_request,"%srequest",tempstr);
+        	//printf("%s\n",filename_request);
+        	if(access(filename_request, F_OK)==-1)
+        	{
+        		sprintf(command,"rm -fr %s",filename);
+        		system(command);
+        	}  
+        }
+       
+ //  usleep(1);
+    }
+   printf("%d files process\n",file_count);
+   closedir(dirp);  
+
+  } 
+   finish = get_usec_time(); 
+	printf("on loop run time:%d\n",finish-start);	
+ sleep(1);
+	}
+	
+	return 1;
+	
+}
+#endif
+
+
+/*
+int main(int argc,char * argv[]){
+	char filename[1000]={0};	
+	char dirname[1000]={0};
+	char tempstr[1000]={0};
+	int type;
+		DIR *dirp;   
+  struct dirent *direntp; 
+  sprintf(dirname,"/dev/shm/%s/",argv[1]);
+//	 while(1)
+//	 {
+
+	cspFileInfo.conn = redisConnect(REDISSERVERHOST,REDISSERVERPORT);
+
+		if(cspFileInfo.conn->err){
+			redisFree(cspFileInfo.conn);
+			cspFileInfo.conn=NULL;
+			cspFileInfo.conn = redisConnect(REDISSERVERHOST,REDISSERVERPORT);
+			if(cspFileInfo.conn->err){
+				redisFree(cspFileInfo.conn);
+				cspFileInfo.conn = NULL;
+				printf("can not connect  to redis server.\n");
+				return -1;					
+			}
+		}
+		 if ((dirp = opendir(dirname)) != NULL) 
+		 {   
+
+		    while ((direntp = readdir(dirp)) != NULL){
+				sprintf(filename,"/dev/shm/%s/%s",argv[1],direntp->d_name); 
+     			memset(tempstr,0,1024);
+				if(strstr(direntp->d_name,"request")!=NULL){
+					if(sscanf(direntp->d_name,"%d_%s",&type,tempstr)==2)
+	        		{
+						if(type == 100){
+							parse(filename);
+						}
+					}
+		    	}
+		    }
+		 }
+//	 }
+}
+*/

@@ -1,0 +1,63 @@
+CC = gcc
+CFLAGS = -Wall -O -g
+LIBPATH = /usr/lib/mysql/
+INCLUD =  /usr/include/mysql/
+INSTALL = /usr/bin/install -c
+BIN_DIR = /usr/inp/bin/
+BUILD_DIR = ./build/
+FLAGS = -lmysqlclient -lpthread -lhiredis  -lz
+POLICY_FLAGS = -lmysqlclient -lpthread
+
+
+.c.o:
+	gcc -g -c *.c
+
+PROG =  audit_process audit_sql_insert audit_csp_rel audit_redis_clear audit_redis_update audit_alarm_add audit_alarm_del audit_alarm_reload audit_runtime_database audit_runtime_redis audit_policy_reload audit_policy_add audit_policy_del audit_policy_clr audit_show dbm_sql_check
+
+all:  hbase audit_process audit_sql_insert audit_csp_rel audit_redis_clear audit_redis_update audit_alarm_add audit_alarm_del audit_alarm_reload audit_runtime_database audit_runtime_redis audit_policy_reload audit_policy_add audit_policy_del audit_policy_clr audit_show dbm_sql_check
+
+
+audit_process:audit_main_new.o sunday.o    audit_api.o  audit_lock.o audit_telnet.o audit_ftp.o audit_ftp_file.o audit_database.o audit_time_api.o audit_studio.o op_db.o redis_api.o csp_policy.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_sql_insert:audit_database_sql.o audit_time_api.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_csp_rel: csp_deal.o redis_api.o audit_time_api.o qsort.o gzip.o chunk.o csp_policy.o csp_policy_match.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_redis_clear:redis_clear.o redis_api.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_redis_update:redis_update.o redis_api.o csp_db.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_alarm_reload:csp_policy_set_process.o csp_db.o csp_policy.o
+	$(CC) $(CFLAGS) $^ -o $@ $(POLICY_FLAGS)
+audit_alarm_add:csp_policy_add_process.o csp_db.o csp_policy.o
+	$(CC) $(CFLAGS) $^ -o $@ $(POLICY_FLAGS)
+audit_alarm_del:csp_policy_del_process.o csp_db.o csp_policy.o
+	$(CC) $(CFLAGS) $^ -o $@ $(POLICY_FLAGS)
+audit_runtime_database:runtime_database_table.o audit_time_api.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_runtime_redis:runtime_redis.o audit_time_api.o
+	$(CC) $(CFLAGS) $^ -o $@ $(FLAGS)
+audit_policy_reload:csp_audit_policy_set_process.o csp_db.o csp_policy.o
+	$(CC) $(CFLAGS) $^ -o $@ $(POLICY_FLAGS)
+audit_policy_add:csp_audit_policy_add_process.o csp_db.o csp_policy.o
+	$(CC) $(CFLAGS) $^ -o $@ $(POLICY_FLAGS)
+audit_policy_del:csp_audit_policy_del_process.o csp_db.o csp_policy.o
+	$(CC) $(CFLAGS) $^ -o $@ $(POLICY_FLAGS)
+audit_policy_clr:csp_audit_policy_clr_process.o csp_db.o csp_policy.o
+	$(CC) $(CFLAGS) $^ -o $@ $(POLICY_FLAGS)
+audit_show:audit_show.o
+	$(CC) $(CFLAGS) $^ -o $@ 
+dbm_sql_check:dbm_sql_check.o
+	$(CC) $(CFLAGS) $^ -o $@
+hbase:
+	cd ./myhbase && make
+
+clean:
+	rm -f *.o
+	rm -f $(PROG)
+	rm -f ./myhbase/audit_hbase_insert
+
+install:
+	$(INSTALL) $(PROG) backup_table.sh dbm_watchdog create_table.sh dbm_start.sh dbm_stop.sh dbm_restart.sh ./myhbase/audit_hbase_insert $(BIN_DIR)
+install-build:
+	$(INSTALL) $(PROG) backup_table.sh dbm_watchdog create_table.sh dbm_start.sh dbm_stop.sh dbm_restart.sh   ./myhbase/audit_hbase_insert $(BUILD_DIR)

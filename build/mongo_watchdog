@@ -1,0 +1,43 @@
+#!/bin/bash
+
+
+watchdog(){
+	cmd0=`ps -ef|awk '{print $8}'|grep audit_mongo_insert|wc -l`
+
+	if [ $cmd0 -eq 0 ];then
+		/usr/inp/bin/audit_mongo_insert --deamon -M 1
+	fi
+
+	cmd1=`ps -ef|awk '{print $8}'|grep audit_process|wc -l`
+
+        if [ $cmd1 -eq 0 ];then
+                /usr/inp/bin/audit_process
+				/usr/inp/bin/audit_policy_reload
+        fi
+	cmd2=`ps ax|grep "inp -c"|grep -v grep|wc -l`
+
+        if [ $cmd2 -eq 0 ];then
+		killall audit_process
+                /usr/inp/bin/inp -c c -n 4 -- -q 1 -p ffff
+		sleep 20
+		/usr/inp/bin/set_audit_monitor
+		/usr/inp/bin/white_user_anti
+        fi
+
+        cmd3=`ps -ef|awk '{print $8}'|grep oracle_dir_processing|wc -l`
+        if [ $cmd3 -lt 5 ];then
+                /usr/inp/bin/stop_oracle_dir_processing.sh
+                /usr/inp/bin/start_oracle_dir_processing.sh
+        fi
+        cmd4=`ps -ef|awk '{print $8}'|grep pool|wc -l`
+
+        if [ $cmd4 -eq 0 ];then
+                /usr/inp/bin/start_pool.sh
+        fi
+}
+while true
+do
+	sleep 1
+	watchdog
+
+done

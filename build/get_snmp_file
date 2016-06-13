@@ -1,0 +1,12 @@
+#!/bin/bash
+
+loop(){
+        echo > /media/data/tmp/1.tmp
+        sh /usr/inp/bin/audit_ip_mac.sh
+	/usr/inp/bin/sync_ip_mac_redis &
+}
+while true
+do 
+        loop
+	sleep 60
+done

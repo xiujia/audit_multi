@@ -1,0 +1,41 @@
+#!/usr/bin/perl
+
+$bin_path = "/usr/inp/bin/";
+$audit_process = $bin_path."audit_process";
+$webmail_process = $bin_path."webmail_process";
+$bbs_process = $bin_path."bbs_process";
+$ripmime_process = $bin_path."ripmime_process";
+$audit_policy_reload = $bin_path."audit_policy_reload";
+
+
+sub check_process{
+	
+	my @cmd;	
+	$cmd[0] = `ps -ef|awk '{print \$8}'|grep audit_process|wc -l`;
+	$cmd[1] = `ps -ef|awk '{print \$8}'|grep webmail_process|wc -l`;
+	$cmd[2] = `ps -ef|awk '{print \$8}'|grep bbs_process|wc -l`;
+	$cmd[3] = `ps -ef|awk '{print \$8}'|grep ripmime_process|wc -l`;		
+	@cmd;
+}
+while(1){
+	@res = &check_process;
+	if($res[0] == 0){
+		system($audit_process);
+		sleep(2);
+		system($audit_policy_reload);
+		print $audit_process;
+	}
+	if($res[1] == 0){
+		system($webmail_process);
+		print $webmail_process;
+	}
+	if($res[2] == 0){
+		system($bbs_process);
+		print $bbs_process;
+	}
+	if($res[3] == 0){
+		system($ripmime_process);
+		print $ripmime_process;
+	}
+	sleep 30;
+}

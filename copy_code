@@ -1,0 +1,12 @@
+#!/bin/bash
+#pkill -15 dbm_watchdog
+#pkill -15 audit_process
+#pkill -15 audit_csp_release
+#pkill -15 audit_sql_insert
+#pkill -15 audit_runtime_database
+#pkill -15 audit_runtime_redis
+
+scp  root@$1:/usr/src/inp/audit/build/*	. 
+
+#sleep 2
+#/usr/inp/bin/audit_watchdog &

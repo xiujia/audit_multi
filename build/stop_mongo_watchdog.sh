@@ -1,0 +1,2 @@
+killall mongo_watchdog
+killall audit_mongo_insert

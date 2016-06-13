@@ -1,0 +1,583 @@
+
+//update 2015/1/27
+//cg
+
+
+
+#include"audit_api.h"
+#include"audit_database_sql.h"
+#include<string.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include"op_db.h"
+#include <time.h>
+#include <mysql/mysql.h>
+#include<sys/types.h>
+//#include "sunday.h"
+
+
+#define MAX_SQL_NUM		10
+#define AUDIT_MAC_LEN	20
+#define KEY_LOGIN 		"login:"
+
+#define KEY_PASS 		"Password:"
+#define KEY_PASS1		"password:"
+
+
+#define KEY_QUIT 		"quit"
+#define KEY_ENTER 		"\r\n"
+#define KEY_TAB			"\t"
+//空格0x20
+#define KEY_CMD  		"\r\r\n"
+#define KEY_N 			"?"
+#define KEY_BACK		"\b"
+#define KEY_UP			"\033[A"
+#define KEY_DOWN		"\033[B"
+#define KEY_RIGHT		"\033[C"
+#define KEY_LEFT		"\033[D"
+#define KEY_PAGEUP		"\033[5~"
+#define KEY_PAGEDOWN		"\033[6~"
+
+/*
+typedef struct {
+char *user;
+char *pass;
+
+Bool log_state;
+Bool pass_state;
+Bool cmd_state;
+char * cmd;
+u_int32_t id;
+u_int32_t cmd_id;
+}Taudit_telnet_info;
+
+
+typedef struct {
+u_int32_t id;
+u_int32_t cmd_id;
+char *cmd;
+}Taudit_telnet_cmd;
+*/
+
+int sql_num = 0;
+int file_flag = 0;
+int cmd_flag = 0;
+FILE *fp_insert;
+char filename[1000];
+
+char cmd_tmp[AUDIT_CMD_LEN];
+
+extern Taudit_telnet_info telnet_info[AUDIT_INDEX_NUM];
+extern char tablesTime[AUDIT_TIME_LEN];
+
+
+
+
+
+Bool match_quit( char *s1, char *s2);
+
+
+
+u_int32_t audit_telnet(struct audit_pack_info_head * p_info_hd,struct audit_pack_info * p_info,unsigned char * payload)
+{
+
+
+
+char str_insert[1000];
+char str_sql[1000];
+
+
+char mv_tmp[1000];
+char insert_head[100];
+char insert_tail[100];
+
+
+time_t start,end;
+struct tm *timeinfo;
+	
+MYSQL telnet_mysql;
+MYSQL telnet_cmd_mysql;
+u_int32_t num=p_info_hd->hash%AUDIT_INDEX_NUM;
+char  	time_now[AUDIT_TIME_LEN];
+char 	src_ip[32];
+
+char 	src_mac[64];
+char	des_mac[64];
+char	dst_ip[32];
+
+char 	tmp[AUDIT_CMD_LEN];
+const char KEY_WIN_LOGON[2] ={0xff,0xfd};
+const char KEY_LOGIN1[]={0xc7,0xeb,0xca,0xe4,0xc8,0xeb,0xd5,0xca,0xba,0xc5 };//请输入账号
+const char KEY_LOGIN2[]={0xc7,0xeb,0xca,0xe4,0xc8,0xeb,0xb4,0xfa,0xba,0xc5 };//请输入代号
+const char KEY_PASS2[]={0xc7,0xeb,0xca,0xe4,0xc8,0xeb,0xc3,0xdc,0xc2,0xeb};//请输入密码
+const char KEY_LOGON[]={0xff,0xfd,0x1f};
+const char KEY_LOGON1[]={0xff,0xfd,0x18};
+//const char KEY_DROP[2]={0xff};
+/*
+#define KEY_LOGON		0xfffd1f
+#define KEY_LOGIN1		0xc7ebcae4c8ebd5cabac5  
+#define KEY_LOGIN2		0xc7ebcae4c8ebb4fabac5 
+#define KEY_PASS2		"0xc70xeb0xca0xe40xc80xeb0xc30xdc0xc20xeb"	//请输入密码
+*/
+sprintf(insert_head ,"use dbmonitor;\nset autocommit=0;\n");
+sprintf(insert_tail ,"commit;\n");
+insert_head[strlen(insert_head)]='\0';
+insert_tail[strlen(insert_tail)]='\0';
+
+
+
+if(0==p_info_hd->payload_len)
+{
+	return 0;
+}
+//新流
+if (p_info->isnew)
+	{
+		
+		p_info->basic=1;
+		p_info->audit_policy_stat = 1;
+		telnet_info[num].id = ++telnet_id; 
+		telnet_info[num].user_state=0;
+		telnet_info[num].pos=0;
+		telnet_info[num].index=0;
+		
+	}
+
+//旧流
+	//printf("dir==%d---len==%d\n",p_info_hd->isin,p_info_hd->payload_len);
+	//入流
+	if (p_info_hd->isin){
+		char *  match_login;
+		char * match_login1,*match_login2;
+		//match_login=strstr(payload,KEY_LOGIN);
+		match_login1=strstr(payload,KEY_LOGIN1);
+		match_login2=strstr(payload,KEY_LOGIN2);
+		/*
+		if(!cmd_flag)
+		{
+		*/
+			if(p_info_hd->payload_len > strlen(KEY_LOGIN)){
+				int offset = p_info_hd->payload_len - strlen(KEY_LOGIN)-1;
+				match_login=strstr(payload+offset,KEY_LOGIN);
+			
+			}
+			else
+				match_login=strstr(payload,KEY_LOGIN);
+		
+			if(!telnet_info[num].log_state&&(match_login||match_login1||match_login2)){ //用户名输入状态
+				printf("match_login\n");
+			memset(telnet_info[num].user,0,sizeof(telnet_info[num].user));
+			telnet_info[num].cmd_id = 1; 
+			telnet_info[num].log_state = 1;
+			telnet_info[num].cmd_state = 0;
+			return 0;
+			}
+			char * match_pass=strstr(payload,KEY_PASS);		
+			char * match_pass1=strstr(payload,KEY_PASS1);
+			char * match_pass2=strstr(payload,KEY_PASS2);
+			if(match_pass||match_pass1||match_pass2){ //密码输入状态
+				printf("match_pass\n");
+				memset(telnet_info[num].pass,0,sizeof(telnet_info[num].pass));
+				telnet_info[num].cmd_state = 0;
+				telnet_info[num].pass_state = 1;
+				return 0;
+			}
+			char * match_cmd_done=strstr(payload,KEY_CMD);
+			if(match_cmd_done){//match_key_r//命令输入完毕（"\r\r\n"）
+				printf("match_cmd_done\n");
+				telnet_info[num].cmd_state = 1;//登陆状态或是命令输入完毕状态
+			
+				memset(telnet_info[num].cmd,0,sizeof(telnet_info[num].cmd));
+				return 0;
+			}
+		
+			char * match_cmd_logon=strstr(payload,KEY_LOGON);
+			char * match_cmd_logon1=strstr(payload,KEY_LOGON1);
+			//if(match_cmd_logon)
+			
+			if((telnet_info[num].log_state==2)&&(match_cmd_logon||match_cmd_logon1))
+			{
+				printf("match_cmd_logon\n");
+				telnet_info[num].cmd_state = 1;
+				memset(telnet_info[num].cmd,0,sizeof(telnet_info[num].cmd));
+				return 0;
+			}
+		
+		
+			return 0;
+			/*
+		}
+		else
+		{
+			
+			//如果是\r\r\n直接跳出
+				//回包命令
+				//response_content
+			return 0;
+		}
+		*/
+	}
+	
+	//出流
+	if(!p_info_hd->isin){
+		
+		//#if 0
+		if(payload[0] == 0xff)
+		{
+			return 0;
+		}
+		//#endif
+		
+		char * match_enter=strstr(payload,KEY_ENTER);
+		
+		//printf("55555555555555556\n");
+		//printf("telnet_info[num].cmd_state = %d\n",telnet_info[num].cmd_state);
+		if(!telnet_info[num].cmd_state)   //未登录
+		{
+			//printf("telnet_info[num].log_state = %d\n",telnet_info[num].log_state);
+			if (telnet_info[num].log_state == 1)                //用户名输入状态
+			{
+				if (!match_enter){                                       //用户名未输完
+					//printf("!match_enter\n");
+					//telnet_info[num].user = strcat(telnet_info[num].user,payload);
+					
+					
+					
+					int len = strlen(telnet_info[num].user);
+					
+					
+					if(strstr(payload,KEY_BACK)){
+						telnet_info[num].user[len-1]=0x00;
+						return 0;
+						}
+					else{
+                 					memcpy(telnet_info[num].user+len ,payload ,strlen(payload));
+						return 0;
+					}
+				}
+				else{
+					/*
+					int len = strlen(telnet_info[num].user);
+					telnet_info[num].user[len]=0x00;
+					*/
+					//printf("match_enter\n");
+					//printf("match_enter user_state = %d\n",telnet_info[num].user_state);
+					telnet_info[num].log_state = 2;                         //输完用户名
+					
+					//else{
+					/*
+						memset(src_ip,0,sizeof(src_ip));
+						
+						sprintf(src_ip,"%d.%d.%d.%d",(int)UCHARPTR(&p_info_hd->cli_ip)[0],(int)UCHARPTR(&p_info_hd->cli_ip)[1],(int)UCHARPTR(&p_info_hd->cli_ip)[2],(int)UCHARPTR(&p_info_hd->cli_ip)[3]);
+						
+						
+						memset(src_mac,0,sizeof(src_mac));
+						memset(des_mac,0,sizeof(des_mac));
+						memset(dst_ip,0,sizeof(dst_ip));
+						sprintf(dst_ip,"%d.%d.%d.%d",(int)UCHARPTR(&p_info_hd->ser_ip)[0],(int)UCHARPTR(&p_info_hd->ser_ip)[1],(int)UCHARPTR(&p_info_hd->ser_ip)[2],(int)UCHARPTR(&p_info_hd->ser_ip)[3]);
+						
+						sprintf(src_mac, "%02x-%02x-%02x-%02x-%02x-%02x",
+						p_info_hd->cli_mac[0],
+						p_info_hd->cli_mac[1],
+						p_info_hd->cli_mac[2],
+						p_info_hd->cli_mac[3],
+						p_info_hd->cli_mac[4],
+						p_info_hd->cli_mac[5]);
+						sprintf(des_mac, "%02x-%02x-%02x-%02x-%02x-%02x",
+						p_info_hd->ser_mac[0],
+						p_info_hd->ser_mac[1],
+						p_info_hd->ser_mac[2],
+						p_info_hd->ser_mac[3],
+						p_info_hd->ser_mac[4],
+						p_info_hd->ser_mac[5]);
+						
+						*/
+						telnet_info[num].user_state=1;
+						return 0;
+					//}
+					
+					
+					
+					}
+			}	
+			if (telnet_info[num].pass_state == 1){                             //密码输入状态
+				if(!match_enter){  //密码未输完
+					//telnet_info[num].pass = strcat(telnet_info[num].pass,payload);
+					
+					int len = strlen(telnet_info[num].pass);
+                 	memcpy(telnet_info[num].pass+len ,payload ,strlen(payload));
+					return 0;
+					}
+				else{                                                                //输完密码
+					telnet_info[num].pass_state = 2;
+
+					return 0;
+					}
+			}
+		}
+		else{ 																			//登陆
+		
+		
+						memset(src_ip,0,sizeof(src_ip));
+						
+						sprintf(src_ip,"%d.%d.%d.%d",(int)UCHARPTR(&p_info_hd->cli_ip)[0],(int)UCHARPTR(&p_info_hd->cli_ip)[1],(int)UCHARPTR(&p_info_hd->cli_ip)[2],(int)UCHARPTR(&p_info_hd->cli_ip)[3]);
+						
+						
+						memset(src_mac,0,sizeof(src_mac));
+						memset(des_mac,0,sizeof(des_mac));
+						memset(dst_ip,0,sizeof(dst_ip));
+						sprintf(dst_ip,"%d.%d.%d.%d",(int)UCHARPTR(&p_info_hd->ser_ip)[0],(int)UCHARPTR(&p_info_hd->ser_ip)[1],(int)UCHARPTR(&p_info_hd->ser_ip)[2],(int)UCHARPTR(&p_info_hd->ser_ip)[3]);
+						
+						sprintf(src_mac, "%02x-%02x-%02x-%02x-%02x-%02x",
+						p_info_hd->cli_mac[0],
+						p_info_hd->cli_mac[1],
+						p_info_hd->cli_mac[2],
+						p_info_hd->cli_mac[3],
+						p_info_hd->cli_mac[4],
+						p_info_hd->cli_mac[5]);
+						sprintf(des_mac, "%02x-%02x-%02x-%02x-%02x-%02x",
+						p_info_hd->ser_mac[0],
+						p_info_hd->ser_mac[1],
+						p_info_hd->ser_mac[2],
+						p_info_hd->ser_mac[3],
+						p_info_hd->ser_mac[4],
+						p_info_hd->ser_mac[5]);
+			
+			if(!match_enter)                                                     //命令未输完
+			{	
+				cmd_flag = 0; //重置标示
+				
+				if(payload[0] == 0xff){
+					return 0;
+				}
+				printf("99999\n");
+				//如果长度大于1，为粘贴直接往后加
+				int len = strlen(telnet_info[num].cmd);
+				if(p_info_hd->payload_len<2)//p_info_hd->payload_len
+				{
+
+					if (memcmp(telnet_info[num].cmd,KEY_N,sizeof(KEY_N))==0)                             //如果命令为问号
+						{	
+							memset(telnet_info[num].cmd,0,sizeof(telnet_info[num].cmd));
+						}
+					else{
+					
+					
+					
+					if(strstr(payload,KEY_BACK))
+						{
+							memset(tmp,0,sizeof(tmp));
+							memcpy(tmp,telnet_info[num].cmd+len-telnet_info[num].index,telnet_info[num].index);
+							//printf("%s\n",tmp);
+							memcpy(telnet_info[num].cmd+len-telnet_info[num].index-1 ,tmp ,strlen(tmp));
+							
+							telnet_info[num].cmd[len-1]='\0';
+							return 0;
+						}
+						
+					/*	
+					if(strstr(payload,KEY_LEFT))
+						{
+							telnet_info[num].index++;
+							if(telnet_info[num].index>len)
+								telnet_info[num].index=len;
+							
+							return 0;
+						}
+					if(strstr(payload,KEY_RIGHT))
+						{
+							telnet_info[num].index--;
+							if(telnet_info[num].index<0)
+								telnet_info[num].index=0;
+							
+							return 0;
+							
+						}
+						*/
+					}
+				}
+				
+					
+						
+					if(strstr(payload,KEY_LEFT))
+						{
+							telnet_info[num].index++;
+							if(telnet_info[num].index>len)
+								telnet_info[num].index=len;
+							
+							return 0;
+						}
+					if(strstr(payload,KEY_RIGHT))
+						{
+							telnet_info[num].index--;
+							if(telnet_info[num].index<0)
+								telnet_info[num].index=0;
+							
+							return 0;
+							
+						}
+					
+					memset(tmp,0,sizeof(tmp));
+					
+					memcpy(tmp,telnet_info[num].cmd+len-telnet_info[num].index,telnet_info[num].index);
+							
+					memcpy(telnet_info[num].cmd+len-telnet_info[num].index,payload,strlen(payload));
+					
+                 	memcpy(telnet_info[num].cmd+len-telnet_info[num].index+strlen(payload) ,tmp ,strlen(tmp));
+					printf("cmd==%s\n",telnet_info[num].cmd);
+
+					return 0;
+				
+						
+					
+				
+			}//命令已输完
+			
+				//命令输完，记录回包标示
+				cmd_flag = 1;
+				
+				//printf("00000\n");
+				//memcpy(telnet_info[num].cmd,payload,strlen(payload));
+				
+				if(strstr(telnet_info[num].cmd,KEY_UP)||strstr(telnet_info[num].cmd,KEY_DOWN))
+				{
+					memset(telnet_info[num].cmd,0,sizeof(telnet_info[num].cmd));
+				}
+				
+				//get_audit_time(time_now);
+				telnet_info[num].pos=0;
+				telnet_info[num].index=0;
+				if(strlen(telnet_info[num].cmd)>0)
+				{
+					printf("11111\n");
+					
+					//数据库语句cmd
+							if(0 == file_flag)						//文件名初始化
+								{
+									//start =clock();
+									
+									
+									time(&start);
+									timeinfo =localtime(&start);
+									memset(filename,0,sizeof(filename));
+									
+								
+									sprintf(filename,"%sSql_terminal_%4d%02d%02d%02d%02d%02d",SQL_TMP,1900+timeinfo->tm_year, 1+timeinfo->tm_mon,
+										timeinfo->tm_mday,timeinfo->tm_hour,timeinfo->tm_min,timeinfo->tm_sec);
+									filename[strlen(filename)]='\0';
+	
+									fp_insert = fopen(filename,"a+");
+									if(NULL == fp_insert)
+								
+									{
+										//printf("123456\n");
+										printf("The file doesn't exist!\n");	
+										return -1;
+									}
+		
+									fwrite(insert_head,strlen(insert_head),1,fp_insert);
+									
+									memset(str_insert,0,sizeof(str_insert));
+									
+									//fwrite(insert_head,strlen(insert_head),1,fp_insert);
+									sprintf(str_insert,"insert into cache_monitor_data_%s(src_ip,dst_ip,src_mac,dst_mac,src_port,dst_port,user_name,operation_command) VALUES",tablesTime);
+									str_insert[strlen(str_insert)]='\0';
+									fwrite(str_insert,strlen(str_insert),1,fp_insert);
+									fflush(fp_insert);
+									file_flag = 1;
+								}
+								printf("22222\n");
+					if(sql_num>=MAX_SQL_NUM-1)
+					{
+					printf("10+++++\n");
+						//sprintf(str_sql,"('%s','%s','%s','%s',%s);\ncommit;\n",p->sip,p->dip,p->time,p->mtype,str_field);
+						//sql_num = 0;
+						memset(str_sql,0,sizeof(str_sql));
+						//src_ip,dst_ip,src_mac,dst_mac,src_port,dst_port
+						memset(time_now,0,sizeof(time_now));
+						get_audit_time(time_now);
+						sprintf(str_sql,"('%s','%u','%s','%s','%s' ,'%s','%u','%u','%s','%s');\n",time_now,3,src_ip,dst_ip,src_mac,des_mac,p_info_hd->cli_port,p_info_hd->ser_port,telnet_info[num].user,telnet_info[num].cmd);
+						fwrite(str_sql,strlen(str_sql),1,fp_insert);
+						
+						fwrite(insert_tail,strlen(insert_tail),1,fp_insert);
+						fflush(fp_insert);
+								
+						fclose(fp_insert);//关闭文件
+						fp_insert = NULL;
+						//mv
+					
+						memset(mv_tmp,0,sizeof(mv_tmp));
+						sprintf(mv_tmp,"mv %s %s",filename,SQL_PATH);
+						system(mv_tmp);
+						
+						//fopen()
+						memset(filename,0,sizeof(filename));
+						time(&start);
+						timeinfo =localtime(&start);	
+						sprintf(filename,"%sSql_terminal_%4d%02d%02d%02d%02d%02d",SQL_TMP,1900+timeinfo->tm_year, 1+timeinfo->tm_mon,
+										timeinfo->tm_mday,timeinfo->tm_hour,timeinfo->tm_min,timeinfo->tm_sec);
+
+						filename[strlen(filename)]='\0';
+						fp_insert = fopen(filename,"a+");
+						if(NULL == fp_insert)
+								
+						{
+							printf("The file doesn't exist!\n");
+							return -1;
+						}
+		
+						
+						memset(str_insert,0,sizeof(str_insert));
+						fwrite(insert_head,strlen(insert_head),1,fp_insert);
+						sprintf(str_insert,"insert into cache_monitor_data_%s(capture_time, app_id,src_ip,dst_ip,src_mac,dst_mac,src_port,dst_port,user_name,operation_command) VALUES",tablesTime);
+						str_insert[strlen(str_insert)]='\0';
+						fwrite(str_insert,strlen(str_insert),1,fp_insert);
+						fflush(fp_insert);
+						sql_num = 0;
+			
+					}
+					else
+					{	
+					
+						sql_num++;
+						memset(str_sql,0,sizeof(str_sql));
+						//appid =3;
+						
+						memset(time_now,0,sizeof(time_now));
+						get_audit_time(time_now);
+						sprintf(str_sql,"('%s','%u',%s','%s','%s' ,'%s','%u','%u','%s','%s'),\n",time_now,3,src_ip,dst_ip,src_mac,des_mac,p_info_hd->cli_port,p_info_hd->ser_port,telnet_info[num].user,telnet_info[num].cmd);
+						str_sql[strlen(str_sql)]='\0';
+						fwrite(str_sql,strlen(str_sql),1,fp_insert);
+						
+						fflush(fp_insert);
+						
+						
+					}
+					
+					memset(telnet_info[num].cmd,0,sizeof(telnet_info[num].cmd));
+					telnet_info[num].cmd_id++;
+
+					
+					return 0;
+				}
+				
+				return 0;
+					
+			}
+		}
+		
+		return 0; 
+	}
+	/*
+	return 0;
+}
+*/
+Bool match_quit( char *s1, char *s2){                  //匹配结束命令
+	if (!strncasecmp(s1,s2,strlen(s1)))
+		return 1;
+	else
+		return 0;
+}//linux 下的memicmp
+
+
+

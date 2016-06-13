@@ -1,0 +1,8 @@
+#!/bin/bash
+
+sh /usr/inp/bin/stop_search_processing_dir.sh
+
+/usr/inp/bin/audit_policy_restart
+sleep 2
+
+sh /usr/inp/bin/start_search_processing_dir.sh

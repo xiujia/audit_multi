@@ -1,0 +1,34 @@
+#!/bin/bash
+
+mkdir -p /media/data/sql
+mkdir -p /media/data/sql_tmp
+mkdir -p /media/data/sql_backup
+mkdir -p /media/data/csp
+mkdir -p /media/data/csp_tmp
+
+mkdir -p /media/data/tmp
+
+mkdir -p /dev/shm/oracle/
+
+mkdir -p /dev/shm/oracle/0
+mkdir -p /dev/shm/oracle/1
+mkdir -p /dev/shm/oracle/2
+mkdir -p /dev/shm/oracle/3
+mkdir -p /dev/shm/oracle/4
+mkdir -p /dev/shm/oracle/5
+mkdir -p /dev/shm/oracle/6
+mkdir -p /dev/shm/oracle/7
+mkdir -p /dev/shm/oracle/8
+mkdir -p /dev/shm/oracle/9
+
+mkdir -p /dev/shm/tmp/1/
+mkdir -p /dev/shm/tmp/2/
+mkdir -p /dev/shm/tmp/3/
+mkdir -p /dev/shm/tmp/4/
+mkdir -p /dev/shm/tmp/5/
+mkdir -p /dev/shm/tmp/6/
+mkdir -p /dev/shm/tmp/7/
+mkdir -p /dev/shm/tmp/8/
+mkdir -p /dev/shm/tmp/9/
+mkdir -p /dev/shm/tmp/0/
+

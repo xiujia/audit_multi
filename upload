@@ -1,0 +1,6 @@
+#!/bin/bash
+
+scp -r /usr/inp/tomcat/ root@$1:/usr/inp/
+
+#sleep 2
+#/usr/inp/bin/audit_watchdog &

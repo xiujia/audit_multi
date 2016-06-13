@@ -1,0 +1,81 @@
+#!/bin/bash
+
+bin_path=/usr/inp/bin/
+
+audit_process="$bin_path"audit_process
+audit_policy_reload="$bin_path"audit_policy_reload
+webmail_process="$bin_path"webmail_process
+bbs_process="$bin_path"bbs_process
+ripmime_process="$bin_path"ripmime_process
+
+
+check_process()
+{
+
+	cmd0=`ps -ef|awk '{print $8}'|grep audit_process|wc -l`
+	cmd1=`ps -ef|awk '{print $8}'|grep webmail_process|wc -l`
+	cmd2=`ps -ef|awk '{print $8}'|grep bbs_process|wc -l`
+	cmd3=`ps -ef|awk '{print $8}'|grep ripmime_process|wc -l`
+	cmd4=`ps -A|grep inp |awk '{print $1}'|wc -l`
+	cmd5=`ps -A|grep inp_show|wc -l`
+#	const_inp_pid = 0
+}
+	
+flag=0
+
+while true
+do
+	
+	check_process
+	if [ $cmd4 -eq 0 ];then
+		sleep 30
+		flag=1
+		continue	
+	elif [ $cmd4 -eq $cmd5 ];then
+		sleep 30
+		flag=1
+		continue
+	fi
+	sleep 30
+
+	
+	if [ $flag -eq 1 ];then
+		pkill -15 audit_process
+		pkill -15 webmail_process
+		pkill -15 bbs_process
+		pkill -15 ripmime_process
+		$audit_process
+		$webmail_process
+		$bbs_process
+		$ripmime_process
+		flag=0
+		sleep 15
+		continue
+	fi
+
+	if [ $cmd0 -eq 0 ];then
+		$audit_process
+	fi
+
+	if [ $cmd1 -eq 0 ];then
+		$webmail_process
+	elif [ $cmd0 -eq 0 ];then
+		pkill -15 webmail_process
+		$webmail_process
+	fi
+
+	if [ $cmd2 -eq 0 ];then
+		$bbs_process
+	elif [ $cmd0 -eq 0 ];then
+		pkill -15 bbs_process
+		$bbs_process
+	fi 
+	
+	if [ $cmd3 -eq 0 ];then
+		$ripmime_process
+	elif [ $cmd0 -eq 0 ];then
+		pkill -15 ripmime_process
+		$ripmime_process
+	fi
+
+done
